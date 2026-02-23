@@ -1,6 +1,6 @@
 // =============================================================================
-// USR AR COLLECTOR - MODO "EU, ROBÔ" (CAÇA AOS CARRINHOS/ROBÔS PERDIDOS)
-// ARQUITETO: PARCEIRO DE PROGRAMAÇÃO
+// USR AR COLLECTOR V3 - HYBRID SENSOR EDITION (FIX PARA HOT WHEELS)
+// COMBINA IA (COCO-SSD) COM RADAR ÓPTICO DE CONTRASTE (PIXEL ANALYSIS)
 // =============================================================================
 
 (function() {
@@ -10,27 +10,30 @@
     let time = 0;
 
     const Game = {
-        state: 'BOOT', // BOOT, SCANNING, EXTRACTING
+        state: 'BOOT', // BOOT, SCANNING, ANALYZING
         score: 0,
         
-        // IA Visual (COCO-SSD)
+        // IA Visual (Rede Neuronal)
         objectModel: null,
         detectedItems: [],
         lastDetectTime: 0,
         
+        // Radar Óptico (Contraste com o chão)
+        floorColor: { r: 0, g: 0, b: 0 },
+        
         // Mecânica de Captura
         scanProgress: 0,
         targetItem: null,
-        cooldown: 0,
+        graceTimer: 0, 
         
         // Missão
         itemsRecovered: 0,
         moneyEarned: 0, 
 
         // Estética Corporativa "USR"
-        colorMain: '#00ffff', // Ciano brilhante
-        colorDanger: '#ff003c', // Vermelho alerta
-        colorSuccess: '#00ff66', // Verde sucesso
+        colorMain: '#00ffff', 
+        colorDanger: '#ff003c', 
+        colorSuccess: '#00ff66', 
 
         init: function(faseData) {
             this.state = 'BOOT';
@@ -38,7 +41,6 @@
             this.itemsRecovered = 0;
             this.moneyEarned = 0;
             this.scanProgress = 0;
-            this.cooldown = 0;
             particles = [];
             time = 0;
             
@@ -46,7 +48,6 @@
         },
 
         loadAIModel: async function() {
-            // Carrega a IA do Google (TensorFlow)
             if (typeof cocoSsd === 'undefined') {
                 const script = document.createElement('script');
                 script.src = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd";
@@ -66,21 +67,27 @@
         update: function(ctx, w, h, pose) {
             time += 0.05;
 
-            // 1. DESENHA A CÂMERA DE FUNDO (VISÃO DO CAMINHÃO)
+            // 1. DESENHA A CÂMARA DE FUNDO (REALIDADE AUMENTADA)
             if (window.System.video && window.System.video.readyState === 4) {
                 const videoRatio = window.System.video.videoWidth / window.System.video.videoHeight;
                 const canvasRatio = w / h;
                 let drawW = w, drawH = h, drawX = 0, drawY = 0;
-                // Preenche a tela inteira sem distorcer
                 if (videoRatio > canvasRatio) { drawW = h * videoRatio; drawX = (w - drawW) / 2; } 
                 else { drawH = w / videoRatio; drawY = (h - drawH) / 2; }
+                
                 ctx.drawImage(window.System.video, drawX, drawY, drawW, drawH);
             } else {
                 ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, w, h);
             }
 
+            // EFEITO DE SCANLINES (ESTILO CÂMARA DE SEGURANÇA)
+            ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+            for(let i = 0; i < h; i += 4) {
+                ctx.fillRect(0, i + (time * 10) % 4, w, 1);
+            }
+
             if (this.state === 'BOOT') {
-                this.drawGiantOverlay(ctx, w, h, "CONECTANDO IA", "AGUARDE...");
+                this.drawGiantOverlay(ctx, w, h, "INICIANDO SENSORES", "CALIBRANDO SISTEMAS ÓPTICOS...");
                 return this.score;
             }
 
@@ -91,25 +98,61 @@
         drawGiantOverlay: function(ctx, w, h, title, sub) {
             ctx.fillStyle = "rgba(0, 10, 20, 0.85)"; ctx.fillRect(0, 0, w, h);
             ctx.fillStyle = this.colorMain; ctx.textAlign = "center";
-            ctx.font = "bold clamp(40px, 8vw, 70px) 'Russo One'";
+            ctx.font = "bold clamp(30px, 6vw, 60px) 'Russo One'";
             ctx.fillText(title, w/2, h/2);
-            ctx.fillStyle = "#fff"; ctx.font = "bold clamp(20px, 5vw, 40px) 'Chakra Petch'";
+            ctx.fillStyle = "#fff"; ctx.font = "bold clamp(16px, 4vw, 30px) 'Chakra Petch'";
             ctx.fillText(sub, w/2, h/2 + 60);
+            
+            // Círculo de loading
+            ctx.strokeStyle = this.colorMain; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(w/2, h/2 + 120, 30, time, time + Math.PI); ctx.stroke();
+        },
+
+        // Função para ler a cor média de uma área (Usado pelo Radar Óptico)
+        getAverageColor: function(ctx, x, y, width, height) {
+            try {
+                const data = ctx.getImageData(x, y, width, height).data;
+                let r = 0, g = 0, b = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    r += data[i]; g += data[i+1]; b += data[i+2];
+                }
+                const count = data.length / 4;
+                return { r: r/count, g: g/count, b: b/count };
+            } catch (e) {
+                return { r: 0, g: 0, b: 0 };
+            }
         },
 
         playMode: function(ctx, w, h) {
             const cx = w / 2;
             const cy = h / 2;
-            let potentialTarget = null;
-
-            if (this.cooldown > 0) this.cooldown--;
+            let activeTarget = null;
 
             // =========================================================================
-            // LÓGICA DA IA (MODO "ASPIRADOR": EXTREMAMENTE PERMISSIVO PARA BRINQUEDOS)
+            // SENSOR 1: RADAR ÓPTICO (O SEGREDO PARA OS HOT WHEELS!)
+            // =========================================================================
+            // Ele tira uma "amostra" da cor do chão (na parte inferior do ecrã)
+            this.floorColor = this.getAverageColor(ctx, cx - 50, h * 0.85, 100, 40);
+            
+            // Depois, tira uma "amostra" do centro da mira
+            const centerColor = this.getAverageColor(ctx, cx - 40, cy - 40, 80, 80);
+            
+            // Compara o chão com o centro. Se a cor for muito diferente, TEM UM BRINQUEDO ALI!
+            const colorDiff = Math.abs(this.floorColor.r - centerColor.r) + 
+                              Math.abs(this.floorColor.g - centerColor.g) + 
+                              Math.abs(this.floorColor.b - centerColor.b);
+
+            if (colorDiff > 80 && this.state === 'SCANNING') { // 80 é uma boa margem de contraste
+                activeTarget = {
+                    cx: cx, cy: cy, w: 180, h: 180, 
+                    label: "ANOMALIA / CARRINHO", color: this.colorDanger
+                };
+            }
+
+            // =========================================================================
+            // SENSOR 2: REDE NEURONAL (COCO-SSD PARA SUCATAS MAIORES)
             // =========================================================================
             if (this.objectModel && window.System.video && window.System.video.readyState === 4) {
-                
-                // Analisa a imagem a cada 200ms
                 if (Date.now() - this.lastDetectTime > 200) {
                     this.objectModel.detect(window.System.video).then(predictions => {
                         this.detectedItems = predictions;
@@ -121,18 +164,11 @@
                 const scaleY = h / window.System.video.videoHeight;
 
                 this.detectedItems.forEach(item => {
-                    // Ignora se for pessoa ou coisas gigantes estruturais (sofá, cama, tv)
                     const ignoredClasses = ['person', 'bed', 'sofa', 'tv', 'refrigerator', 'door', 'dining table'];
-                    if (ignoredClasses.includes(item.class)) return;
-
-                    // O SEGREDO: Threshold absurdamente baixo (20%). 
-                    // Se a IA achar que o carrinho é um "mouse" ou um "pássaro" com 20% de certeza, nós aceitamos!
-                    if (item.score < 0.20) return;
+                    if (ignoredClasses.includes(item.class) || item.score < 0.15) return;
 
                     const boxW = item.bbox[2] * scaleX;
                     const boxH = item.bbox[3] * scaleY;
-                    
-                    // Se for do tamanho da tela inteira, ignora. Queremos objetos soltos no chão.
                     if (boxW > w * 0.8 || boxH > h * 0.8) return;
 
                     const boxX = item.bbox[0] * scaleX;
@@ -140,93 +176,112 @@
                     const itemCx = boxX + (boxW/2);
                     const itemCy = boxY + (boxH/2);
 
-                    // Desenha a moldura no objeto
-                    this.drawHologramBox(ctx, boxX, boxY, boxW, boxH, "ROBÔ/SUCATA");
+                    // Desenha HUD Passivo
+                    if (this.state === 'SCANNING') {
+                        this.drawHologramBox(ctx, boxX, boxY, boxW, boxH, "OBJETO IDENTIFICADO", "rgba(0,255,255,0.4)");
+                    }
 
-                    // HITBOX GIGANTE NO CENTRO: Se o centro do objeto estiver perto do centro da tela
-                    const distToCenter = Math.hypot(itemCx - cx, itemCy - cy);
-                    
-                    if (distToCenter < 250 && this.cooldown <= 0 && this.state === 'SCANNING') {
-                        potentialTarget = { cx: itemCx, cy: itemCy, w: boxW, h: boxH };
+                    // Se a IA achar algo perto do centro, tem prioridade sobre o Radar Óptico
+                    if (Math.hypot(itemCx - cx, itemCy - cy) < 250 && this.state === 'SCANNING') {
+                        activeTarget = { cx: itemCx, cy: itemCy, w: boxW, h: boxH, label: "VEÍCULO / SUCATA", color: this.colorMain };
                     }
                 });
             }
 
             // ==========================================
-            // MÁQUINA DE ESTADOS (TRAVAMENTO E CAPTURA)
+            // MÁQUINA DE ESTADOS (TRAVAMENTO E "HACKING")
             // ==========================================
 
             if (this.state === 'SCANNING') {
-                if (potentialTarget) {
-                    this.targetItem = potentialTarget;
-                    this.state = 'EXTRACTING';
-                    if(window.Sfx) window.Sfx.play(1000, 'sawtooth', 0.1, 0.1);
+                if (activeTarget) {
+                    this.targetItem = activeTarget;
+                    this.state = 'ANALYZING';
+                    this.graceTimer = 30; // 30 frames de memória caso a câmara trema
+                    if(window.Sfx) window.Sfx.play(1200, 'sawtooth', 0.1, 0.1);
                 }
             }
 
-            if (this.state === 'EXTRACTING') {
-                if (potentialTarget) {
-                    this.targetItem = potentialTarget; 
-                    
-                    // Barra de travamento enche em cerca de 1 segundo
-                    this.scanProgress += 4;
-                    
-                    if (this.scanProgress % 10 === 0 && window.Sfx) window.Sfx.hover();
+            if (this.state === 'ANALYZING') {
+                // INTERATIVIDADE MÁXIMA: Decifrar Dados!
+                if (activeTarget) {
+                    this.targetItem = activeTarget; 
+                    this.graceTimer = 30; 
+                    this.scanProgress += 2.0; 
+                } else {
+                    // Memória de mira
+                    this.graceTimer--;
+                    if (this.graceTimer <= 0) {
+                        this.scanProgress -= 5;
+                        if (this.scanProgress <= 0) {
+                            this.state = 'SCANNING';
+                            this.targetItem = null;
+                            if(window.Sfx) window.Sfx.error();
+                        }
+                    }
+                }
 
-                    // MIRA TRAVANDO (Animação visual gigante)
-                    ctx.save();
-                    ctx.translate(cx, cy); 
-                    ctx.rotate(time * 2);
-                    ctx.strokeStyle = this.colorDanger; 
-                    ctx.lineWidth = 15; 
+                if (this.targetItem) {
+                    if (this.scanProgress % 8 === 0 && window.Sfx) window.Sfx.hover();
                     
-                    // Círculo fechando
-                    const ringSize = Math.max(100, 300 - (this.scanProgress * 2));
+                    // Tremer o ecrã levemente para dar tensão
+                    if(window.Gfx) window.Gfx.addShake(1);
+
+                    // CAIXA DE HACKING NO ALVO
+                    const tX = this.targetItem.cx; const tY = this.targetItem.cy;
+                    const ringSize = Math.max(80, 250 - (this.scanProgress * 1.7));
+                    
+                    ctx.save();
+                    ctx.translate(tX, tY);
+                    
+                    // Círculos de mira giratórios
+                    ctx.rotate(time * 3);
+                    ctx.strokeStyle = this.colorDanger; ctx.lineWidth = 6; ctx.setLineDash([20, 15]);
                     ctx.beginPath(); ctx.arc(0, 0, ringSize, 0, Math.PI*2); ctx.stroke();
+                    ctx.rotate(-time * 5);
+                    ctx.strokeStyle = this.colorMain; ctx.setLineDash([40, 10]);
+                    ctx.beginPath(); ctx.arc(0, 0, ringSize + 20, 0, Math.PI*2); ctx.stroke();
                     ctx.restore();
 
-                    // Feixe de luz até o objeto
-                    ctx.strokeStyle = "rgba(255, 0, 0, 0.8)"; ctx.lineWidth = 10;
-                    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(this.targetItem.cx, this.targetItem.cy); ctx.stroke();
+                    // TEXTO DE DADOS BINÁRIOS (INTERATIVIDADE)
+                    ctx.fillStyle = this.colorDanger;
+                    ctx.font = "bold 14px monospace"; ctx.textAlign = "center";
+                    const randomCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+                    ctx.fillText(`DECODING... [${randomCode}]`, tX, tY - ringSize - 20);
+                    ctx.fillStyle = "#fff";
+                    ctx.fillText(`VOLUME DETECTADO: ${Math.floor(this.scanProgress)}%`, tX, tY + ringSize + 30);
 
-                    // CAPTURADO!
+                    // Feixe de Laser do Caminhão
+                    ctx.strokeStyle = `rgba(255, 0, 0, ${0.5 + Math.sin(time*15)*0.5})`; 
+                    ctx.lineWidth = 10;
+                    ctx.beginPath(); ctx.moveTo(cx, h); ctx.lineTo(tX, tY); ctx.stroke();
+
+                    // CAPTURA CONCLUÍDA!
                     if (this.scanProgress >= 100) {
                         this.itemsRecovered++;
-                        let reward = Math.floor(Math.random() * 500) + 500; // R$ 500 a 1000
+                        let reward = Math.floor(Math.random() * 800) + 200;
                         this.moneyEarned += reward;
                         this.score += reward / 10;
                         
                         this.state = 'SCANNING';
                         this.scanProgress = 0;
-                        this.cooldown = 60; // 1 segundo de pausa até a próxima captura
                         
-                        if(window.Gfx) window.Gfx.shakeScreen(30);
+                        if(window.Gfx) window.Gfx.shakeScreen(35);
                         if(window.Sfx) window.Sfx.epic();
                         
-                        this.spawnCaptureEffect(this.targetItem.cx, this.targetItem.cy);
+                        this.spawnCaptureEffect(tX, tY);
                         this.targetItem = null;
-
-                        window.System.msg("RECOLHIDO: + R$ " + reward);
-                    }
-                } else {
-                    // Objeto fugiu da mira (Carrinho andou muito rápido)
-                    this.scanProgress = Math.max(0, this.scanProgress - 6);
-                    if (this.scanProgress <= 0) {
-                        this.state = 'SCANNING';
-                        this.targetItem = null;
+                        window.System.msg(`+ R$ ${reward} EXTRAÍDOS!`);
                     }
                 }
             }
 
-            // RENDERIZA O HUD GIGANTE
             this.drawMachineHUD(ctx, w, h, cx, cy);
-            this.updateParticles(ctx);
+            this.updateParticles(ctx, w, h);
         },
 
-        drawHologramBox: function(ctx, x, y, bw, bh, label) {
-            ctx.strokeStyle = "rgba(0, 255, 255, 0.8)"; ctx.lineWidth = 6;
-            const l = 30; // Quinas grandes
-            
+        drawHologramBox: function(ctx, x, y, bw, bh, label, color) {
+            ctx.strokeStyle = color; ctx.lineWidth = 4;
+            const l = 20; 
             ctx.beginPath();
             ctx.moveTo(x, y+l); ctx.lineTo(x, y); ctx.lineTo(x+l, y);
             ctx.moveTo(x+bw-l, y); ctx.lineTo(x+bw, y); ctx.lineTo(x+bw, y+l);
@@ -234,86 +289,83 @@
             ctx.moveTo(x+l, y+bh); ctx.lineTo(x, y+bh); ctx.lineTo(x, y+bh-l);
             ctx.stroke();
 
-            ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-            ctx.font = "bold clamp(18px, 4vw, 24px) 'Russo One'";
+            ctx.fillStyle = color;
+            ctx.font = "bold clamp(10px, 2vw, 16px) 'Chakra Petch'";
             const textW = ctx.measureText(label).width;
-            ctx.fillRect(x, y - 35, textW + 20, 35);
-            ctx.fillStyle = this.colorMain; ctx.textAlign = "left";
-            ctx.fillText(label, x + 10, y - 10);
+            ctx.fillRect(x, y - 25, textW + 10, 25);
+            ctx.fillStyle = "#000"; ctx.textAlign = "left";
+            ctx.fillText(label, x + 5, y - 7);
         },
 
         drawMachineHUD: function(ctx, w, h, cx, cy) {
-            // Efeito de sombra pesada nas bordas (foco no centro)
-            const grad = ctx.createRadialGradient(cx, cy, h*0.4, cx, cy, h);
+            const grad = ctx.createRadialGradient(cx, cy, h*0.35, cx, cy, h);
             grad.addColorStop(0, "rgba(0,0,0,0)");
-            grad.addColorStop(1, "rgba(0,0,0,0.8)");
+            grad.addColorStop(1, "rgba(0,10,20,0.85)");
             ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 
             // =====================================
-            // ESTADO DE ALERTA NO TOPO
+            // ESTATUTO DE HACKING / SCANNING
             // =====================================
-            if (this.state === 'EXTRACTING') {
-                ctx.fillStyle = `rgba(255, 0, 60, ${Math.abs(Math.sin(time*5))*0.4})`;
-                ctx.fillRect(0, 0, w, h); // Tela pisca em vermelho
+            if (this.state === 'ANALYZING') {
+                ctx.fillStyle = `rgba(255, 0, 0, ${Math.abs(Math.sin(time*10))*0.2})`;
+                ctx.fillRect(0, 0, w, h); 
 
                 ctx.fillStyle = this.colorDanger; ctx.textAlign = "center";
-                ctx.font = "bold clamp(40px, 8vw, 80px) 'Russo One'";
-                ctx.fillText("TRAVANDO ALVO!", w/2, 80);
+                ctx.font = "bold clamp(35px, 8vw, 70px) 'Russo One'";
+                ctx.fillText("ALVO BLOQUEADO!", w/2, 80);
                 
-                // BARRA DE PROGRESSO GIGANTE
+                // BARRA GIGANTE
                 ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
-                ctx.fillRect(w*0.1, h*0.75, w*0.8, 50);
+                ctx.fillRect(w*0.1, h*0.75, w*0.8, 40);
                 ctx.fillStyle = this.colorDanger;
-                ctx.fillRect(w*0.1, h*0.75, (this.scanProgress/100) * (w*0.8), 50);
-                ctx.strokeStyle = "#fff"; ctx.lineWidth = 4;
-                ctx.strokeRect(w*0.1, h*0.75, w*0.8, 50);
+                ctx.fillRect(w*0.1, h*0.75, (this.scanProgress/100) * (w*0.8), 40);
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+                ctx.strokeRect(w*0.1, h*0.75, w*0.8, 40);
             } 
             else if (this.state === 'SCANNING') {
-                // MIRA GIGANTE CONSTANTE
-                ctx.strokeStyle = "rgba(0, 255, 255, 0.3)"; ctx.lineWidth = 6;
-                ctx.beginPath(); ctx.arc(cx, cy, 200, 0, Math.PI*2); ctx.stroke();
-                ctx.beginPath(); ctx.arc(cx, cy, 100, 0, Math.PI*2); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(cx-220, cy); ctx.lineTo(cx+220, cy); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(cx, cy-220); ctx.lineTo(cx, cy+220); ctx.stroke();
+                // LINHA DE RADAR QUE SOBE E DESCE
+                const radarY = cy + Math.sin(time * 2) * (h * 0.3);
+                ctx.fillStyle = "rgba(0, 255, 255, 0.4)"; ctx.fillRect(0, radarY, w, 4);
+                ctx.fillStyle = "rgba(0, 255, 255, 0.1)"; ctx.fillRect(0, radarY - 20, w, 40);
+
+                // MIRA CENTRAL
+                ctx.strokeStyle = "rgba(0, 255, 255, 0.3)"; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(cx, cy, 180, 0, Math.PI*2); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx, cy, 90, 0, Math.PI*2); ctx.stroke();
                 
                 ctx.fillStyle = this.colorMain; ctx.textAlign = "center";
                 ctx.font = "bold clamp(30px, 6vw, 60px) 'Russo One'";
-                ctx.fillText("BUSCANDO MATÉRIA", w/2, 60);
+                ctx.fillText("PROCURANDO SUCATA", w/2, 60);
+                
+                // Exibe a leitura de cor em tempo real para dar um ar técnico
+                ctx.font = "12px monospace"; ctx.fillStyle = "#aaa";
+                ctx.fillText(`C_SENS: [${Math.floor(this.floorColor.r)},${Math.floor(this.floorColor.g)},${Math.floor(this.floorColor.b)}]`, w/2, 85);
             }
 
-            // =====================================
-            // PAINEL DE COLETAS (RODAPÉ GIGANTE)
-            // =====================================
-            ctx.fillStyle = "rgba(0, 20, 30, 0.95)"; ctx.fillRect(0, h - 110, w, 110);
+            // RODAPÉ GIGANTE
+            ctx.fillStyle = "rgba(0, 15, 20, 0.95)"; ctx.fillRect(0, h - 110, w, 110);
             ctx.strokeStyle = this.colorMain; ctx.lineWidth = 5; 
             ctx.beginPath(); ctx.moveTo(0, h - 110); ctx.lineTo(w, h - 110); ctx.stroke();
 
             ctx.textAlign = "left";
-            ctx.fillStyle = "#fff"; ctx.font = "bold clamp(20px, 4vw, 30px) 'Chakra Petch'";
-            ctx.fillText(`UNIDADES RECOLHIDAS: ${this.itemsRecovered}`, 20, h - 65);
+            ctx.fillStyle = "#fff"; ctx.font = "bold clamp(18px, 4vw, 28px) 'Chakra Petch'";
+            ctx.fillText(`MATERIAL RECOLHIDO: ${this.itemsRecovered}`, 20, h - 65);
             
             ctx.fillStyle = this.colorSuccess; ctx.font = "bold clamp(35px, 7vw, 60px) 'Russo One'";
             ctx.fillText(`R$ ${this.moneyEarned.toLocaleString('pt-BR')}`, 20, h - 20);
-
-            if (this.cooldown > 0) {
-                ctx.textAlign = "right";
-                ctx.fillStyle = "#f39c12"; ctx.font = "bold clamp(20px, 4vw, 30px) 'Russo One'";
-                ctx.fillText("REINICIANDO...", w - 20, h - 45);
-            }
         },
 
         spawnCaptureEffect: function(x, y) {
-            // Explosão de energia cibernética
-            for(let i=0; i<60; i++) {
+            // Explosão digital
+            for(let i=0; i<50; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 25 + 5;
+                const speed = Math.random() * 30 + 10;
                 particles.push({
-                    type: 'boom', x: x, y: y,
+                    type: 'binary', x: x, y: y,
                     vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-                    life: 1.0, size: Math.random() * 12 + 4, color: this.colorMain
+                    life: 1.0, val: Math.random() > 0.5 ? '1' : '0'
                 });
             }
-            // Flash Gigante
             particles.push({ type: 'flash', life: 1.0 });
         },
 
@@ -321,16 +373,16 @@
             ctx.globalCompositeOperation = 'screen';
             
             particles.forEach(p => {
-                if (p.type === 'boom') {
+                if (p.type === 'binary') {
                     p.x += p.vx; p.y += p.vy; 
-                    p.life -= 0.05; p.size *= 0.90;
-                    ctx.fillStyle = p.color;
-                    ctx.globalAlpha = Math.max(0, p.life);
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                    p.life -= 0.04; 
+                    ctx.fillStyle = `rgba(0, 255, 255, ${Math.max(0, p.life)})`;
+                    ctx.font = "bold 20px monospace";
+                    ctx.fillText(p.val, p.x, p.y);
                 } 
                 else if (p.type === 'flash') {
-                    ctx.globalAlpha = Math.max(0, p.life * 0.5);
-                    ctx.fillStyle = "#ffffff";
+                    ctx.globalAlpha = Math.max(0, p.life * 0.7);
+                    ctx.fillStyle = "#00ffff";
                     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
                     p.life -= 0.1; 
                 }
@@ -346,10 +398,10 @@
 
     const regLoop = setInterval(() => {
         if(window.System && window.System.registerGame) {
-            window.System.registerGame('ar_collector', 'AR USR Collector', '🤖', Game, {
-                camera: 'environment', // Câmera Traseira
+            window.System.registerGame('ar_collector', 'Caça-Anomalias AR', '👽', Game, {
+                camera: 'environment',
                 phases: [
-                    { id: 'f1', name: 'LIMPEZA DO SETOR', desc: 'Pilote o veículo e recolha objetos perdidos pela casa.', reqLvl: 1 }
+                    { id: 'f1', name: 'LIMPEZA ÓPTICA', desc: 'Pilote o camião. O radar encontra as anomalias no chão!', reqLvl: 1 }
                 ]
             });
             clearInterval(regLoop);
