@@ -1,6 +1,6 @@
 // =============================================================================
-// AR TOY TRUCK SIMULATOR: MASTER ARCHITECT EDITION (V14 - FINAL HÍBRIDO)
-// ENGINE AR HÍBRIDA PROFISSIONAL: GESTURE OFFICE, FSM, ZERO LEAKS, REAL ECONOMY
+// AR TOY TRUCK SIMULATOR: MASTER ARCHITECT EDITION (V15 - PREMIUM FEEL)
+// ENGINE AR HÍBRIDA PROFISSIONAL: FÍSICA REAL, FEEDBACK AAA, MISSÕES E UPGRADES
 // =============================================================================
 
 (function() {
@@ -63,9 +63,7 @@
 
                 try {
                     await video.play();
-                } catch(playErr) {
-                    // Prevenção de travamento silencioso
-                }
+                } catch(playErr) {}
 
                 this.isSwitching = false;
                 window.System.currentCameraMode = mode;
@@ -98,11 +96,13 @@
         eventCallback: null,
         
         buttons: [
-            { id: 'REFUEL', label: 'ABASTECER', x: 0, y: 0, w: 220, h: 60, color: '#f39c12' },
-            { id: 'REPAIR', label: 'REPARAR', x: 0, y: 0, w: 220, h: 60, color: '#e74c3c' },
-            { id: 'UPG_TANK', label: 'UPGRADE TANK', x: 0, y: 0, w: 220, h: 60, color: '#3498db' },
-            { id: 'UPG_EFF', label: 'UPG EFFICIENCY', x: 0, y: 0, w: 220, h: 60, color: '#9b59b6' },
-            { id: 'EXIT', label: 'SAIR DA BASE', x: 0, y: 0, w: 300, h: 70, color: '#00ff66' }
+            { id: 'REFUEL', label: 'ABASTECER', x: 0, y: 0, w: 180, h: 60, color: '#f39c12' },
+            { id: 'REPAIR', label: 'REPARAR', x: 0, y: 0, w: 180, h: 60, color: '#e74c3c' },
+            { id: 'UPG_ENGINE', label: 'UPG MOTOR', x: 0, y: 0, w: 180, h: 60, color: '#3498db' },
+            { id: 'UPG_TANK', label: 'UPG TANQUE', x: 0, y: 0, w: 180, h: 60, color: '#9b59b6' },
+            { id: 'UPG_RADAR', label: 'UPG RADAR', x: 0, y: 0, w: 180, h: 60, color: '#00ffff' },
+            { id: 'UPG_TRUCK', label: 'UPG CHASSI', x: 0, y: 0, w: 180, h: 60, color: '#f1c40f' },
+            { id: 'EXIT', label: 'SAIR DA BASE', x: 0, y: 0, w: 300, h: 60, color: '#00ff66' }
         ],
 
         init: async function(callback) {
@@ -165,11 +165,14 @@
             }
 
             const cx = w / 2; const cy = h / 2;
-            this.buttons[0].x = cx - 250; this.buttons[0].y = cy - 100;
-            this.buttons[1].x = cx + 30;  this.buttons[1].y = cy - 100;
-            this.buttons[2].x = cx - 250; this.buttons[2].y = cy;
-            this.buttons[3].x = cx + 30;  this.buttons[3].y = cy;
-            this.buttons[4].x = cx - 150; this.buttons[4].y = cy + 120;
+            
+            this.buttons[0].x = cx - 290; this.buttons[0].y = cy - 100;
+            this.buttons[1].x = cx - 90;  this.buttons[1].y = cy - 100;
+            this.buttons[2].x = cx + 110; this.buttons[2].y = cy - 100;
+            this.buttons[3].x = cx - 290; this.buttons[3].y = cy - 10;
+            this.buttons[4].x = cx - 90;  this.buttons[4].y = cy - 10;
+            this.buttons[5].x = cx + 110; this.buttons[5].y = cy - 10;
+            this.buttons[6].x = cx - 150; this.buttons[6].y = cy + 100;
 
             ctx.fillStyle = "rgba(0, 15, 30, 0.85)"; ctx.fillRect(0, 0, w, h);
             ctx.fillStyle = "#00ffff"; ctx.textAlign = "center";
@@ -177,9 +180,9 @@
             ctx.fillText("GARAGEM HOLOGRÁFICA", cx, cy - 180);
             
             ctx.fillStyle = "#00ff66"; ctx.font = "bold 24px 'Chakra Petch'";
-            ctx.fillText(`SALDO: R$ ${gameState.money.toLocaleString()}`, cx, cy - 140);
+            ctx.fillText(`SALDO: R$ ${Math.floor(gameState.displayMoney).toLocaleString()}`, cx, cy - 140);
             ctx.fillStyle = "#fff"; ctx.font = "16px Arial";
-            ctx.fillText(`VIDA: ${Math.floor(gameState.health)}/100 | COMB: ${Math.floor(gameState.fuel)}/${gameState.stats.maxFuel}`, cx, cy - 115);
+            ctx.fillText(`VIDA: ${Math.floor(gameState.health)}/100 | COMB: ${Math.floor(gameState.displayFuel)}/${gameState.stats.maxFuel}`, cx, cy - 115);
 
             let currentlyHovering = null;
 
@@ -198,16 +201,18 @@
                 ctx.strokeStyle = btn.color; ctx.lineWidth = isHover ? 4 : 2;
                 ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
                 
-                ctx.fillStyle = "#fff"; ctx.font = "bold 18px 'Chakra Petch'"; ctx.textAlign = "center";
-                ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2 + 6);
+                ctx.fillStyle = "#fff"; ctx.font = "bold 16px 'Chakra Petch'"; ctx.textAlign = "center";
+                ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2 + 2);
                 
-                ctx.font = "14px Arial"; ctx.fillStyle = btn.color;
+                ctx.font = "12px Arial"; ctx.fillStyle = btn.color;
                 let costTxt = "";
                 if(btn.id==='REFUEL') costTxt = `R$ ${Math.floor((gameState.stats.maxFuel - gameState.fuel)*2)}`;
                 if(btn.id==='REPAIR') costTxt = `R$ ${Math.floor((100 - gameState.health)*5)}`;
-                if(btn.id==='UPG_TANK') costTxt = `R$ ${gameState.upgrades.tank.cost}`;
-                if(btn.id==='UPG_EFF') costTxt = `R$ ${gameState.upgrades.efficiency.cost}`;
-                if(costTxt) ctx.fillText(costTxt, btn.x + btn.w/2, btn.y + btn.h + 20);
+                if(btn.id==='UPG_ENGINE') costTxt = gameState.upgrades.engine.lvl < gameState.upgrades.engine.max ? `R$ ${gameState.upgrades.engine.cost}` : 'MÁX';
+                if(btn.id==='UPG_TANK') costTxt = gameState.upgrades.tank.lvl < gameState.upgrades.tank.max ? `R$ ${gameState.upgrades.tank.cost}` : 'MÁX';
+                if(btn.id==='UPG_RADAR') costTxt = gameState.upgrades.radar.lvl < gameState.upgrades.radar.max ? `R$ ${gameState.upgrades.radar.cost}` : 'MÁX';
+                if(btn.id==='UPG_TRUCK') costTxt = gameState.upgrades.truck.lvl < gameState.upgrades.truck.max ? `R$ ${gameState.upgrades.truck.cost}` : 'MÁX';
+                if(costTxt) ctx.fillText(costTxt, btn.x + btn.w/2, btn.y + btn.h - 8);
             });
 
             if (currentlyHovering) {
@@ -259,7 +264,7 @@
     let particles = [];
     
     const Game = {
-        state: 'BOOT', // BOOT, CALIBRATION, PLAY_REAR_AR, ENTER_BASE_TRANSITION, FRONT_AR_OFFICE, EXIT_BASE_TRANSITION, TOW_MODE, GAME_OVER
+        state: 'BOOT', 
         lastTime: 0,
         timeTotal: 0,
         score: 0,
@@ -274,6 +279,8 @@
         targetSpeed: 0,
         manualAccelerate: false,
         deviceForce: 0,
+        _deviceOrientationHandler: null,
+        _deviceMotionHandler: null,
         
         objectModel: null,
         detectedItems: [],
@@ -292,19 +299,33 @@
         cooldown: 0,
         currentEvent: null,
         eventTimer: 0,
+        _sensorsReady: false,
+        
+        // Premium Feedback Vars
+        displayMoney: 0,
+        displayFuel: 100,
+        collectGlow: 0,
+        collectZoom: 0,
+        baseFlash: 0,
+
+        // Missões
+        currentMission: { type: 'NORMAL', goal: 3, progress: 0, timer: 0, active: false },
         
         health: 100,
         fuel: 100,
+        wear: { motor: 0, wheels: 0 },
         money: 0,
         cargo: [],
         level: 1,
         xp: 0,
         
-        stats: { maxFuel: 100, maxCargo: 3, baseSpeed: 20, scanPower: 1.0, radarRange: 150 },
+        stats: { maxFuel: 100, maxCargo: 3, baseSpeed: 20, scanPower: 1.0, radarRange: 150, wearRate: 0.3 },
         
         upgrades: {
-            tank: { lvl: 1, max: 5, cost: 1000 },
-            efficiency: { lvl: 1, max: 5, cost: 1500 }
+            engine: { lvl: 1, max: 5, cost: 1000 },
+            tank:   { lvl: 1, max: 5, cost: 800 },
+            radar:  { lvl: 1, max: 5, cost: 1200 },
+            truck:  { lvl: 1, max: 5, cost: 1500 }
         },
 
         colors: { 
@@ -322,17 +343,45 @@
             this.score = 0;
             this.health = 100;
             this.fuel = this.stats.maxFuel;
+            this.wear = { motor: 0, wheels: 0 };
+            this.displayFuel = this.fuel;
             this.money = 0;
+            this.displayMoney = 0;
             this.xp = 0;
             this.level = 1;
             this.cargo = [];
             this.anomalies = [];
             this.isExtracting = false;
+            this.collectGlow = 0;
+            this.collectZoom = 0;
+            this.baseFlash = 0;
             particles = [];
             
+            this.generateMission();
             this.setupSensors();
             this.setupInput();
             this.changeState('BOOT');
+        },
+
+        generateMission: function() {
+            const types = ['COMBO', 'HEAVY LOAD', 'TIMED'];
+            let t = types[Math.floor(Math.random() * types.length)];
+            this.currentMission = {
+                type: t,
+                goal: 3 + Math.floor(Math.random() * 3),
+                progress: 0,
+                timer: t === 'TIMED' ? 90 : 0,
+                active: true
+            };
+        },
+
+        completeMission: function() {
+            this.currentMission.active = false;
+            let bonus = this.currentMission.goal * 1000;
+            this.money += bonus;
+            window.System.msg("OBJETIVO CUMPRIDO! BÔNUS: R$" + bonus);
+            this.baseFlash = 1.0;
+            if (window.Sfx) window.Sfx.epic();
         },
 
         changeState: function(newState) {
@@ -351,6 +400,7 @@
                     break;
                 case 'PLAY_REAR_AR':
                     this.startAILoop();
+                    if (!this.currentMission.active) this.generateMission();
                     break;
                 case 'ENTER_BASE_TRANSITION':
                     this.stopAILoop();
@@ -363,6 +413,7 @@
                 case 'FRONT_AR_OFFICE':
                     this.virtualSpeed = 0;
                     this.deliverCargo();
+                    this.baseFlash = 1.0;
                     GestureOffice.init(this.handleOfficeAction.bind(this));
                     break;
                 case 'EXIT_BASE_TRANSITION':
@@ -381,34 +432,45 @@
         },
 
         setupSensors: function() {
-            window.addEventListener('deviceorientation', (e) => {
-                this.currentHeading = e.alpha || 0;
-            });
-            window.addEventListener('devicemotion', (e) => {
-                if (this.state === 'ENTER_BASE_TRANSITION' || this.state === 'EXIT_BASE_TRANSITION') return;
-                
-                let acc = e.acceleration || e.accelerationIncludingGravity;
-                if (!acc) return;
-                let mag = Math.sqrt((acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0));
-                let force = Math.abs(mag - (e.acceleration ? 0 : 9.81));
-                
-                if (force > 0.3) {
-                    this.deviceForce = force;
-                    if (force > 15 && this.state === 'PLAY_REAR_AR') {
-                        let impactDmg = force * 0.5;
-                        this.health -= impactDmg;
-                        if(navigator.vibrate) navigator.vibrate(200);
-                        this.spawnParticles(window.innerWidth/2, window.innerHeight/2, 20, this.colors.danger);
-                        window.System.msg("IMPACTO DETECTADO!");
-                        
-                        if (this.health <= 0 && this.state !== 'TOW_MODE') {
-                            this.changeState('TOW_MODE');
+            if (!this._deviceOrientationHandler) {
+                this._deviceOrientationHandler = (e) => {
+                    this.currentHeading = e.alpha || 0;
+                };
+            }
+            if (!this._deviceMotionHandler) {
+                this._deviceMotionHandler = (e) => {
+                    if (this.state === 'ENTER_BASE_TRANSITION' || this.state === 'EXIT_BASE_TRANSITION') return;
+                    
+                    let acc = e.acceleration || e.accelerationIncludingGravity;
+                    if (!acc) return;
+                    let mag = Math.sqrt((acc.x||0)*(acc.x||0) + (acc.y||0)*(acc.y||0) + (acc.z||0)*(acc.z||0));
+                    let force = Math.abs(mag - (e.acceleration ? 0 : 9.81));
+                    
+                    if (force > 0.3) {
+                        this.deviceForce = force;
+                        if (force > 15 && this.state === 'PLAY_REAR_AR') {
+                            let impactDmg = force * 0.5;
+                            this.health -= impactDmg;
+                            if(navigator.vibrate) navigator.vibrate(200);
+                            this.spawnParticles(window.innerWidth/2, window.innerHeight/2, 20, this.colors.danger);
+                            window.System.msg("IMPACTO DETECTADO!");
+                            
+                            if (this.health <= 0 && this.state !== 'TOW_MODE') {
+                                this.changeState('TOW_MODE');
+                            }
                         }
+                    } else {
+                        this.deviceForce = 0;
                     }
-                } else {
-                    this.deviceForce = 0;
-                }
-            });
+                };
+            }
+
+            window.removeEventListener('deviceorientation', this._deviceOrientationHandler);
+            window.removeEventListener('devicemotion', this._deviceMotionHandler);
+
+            window.addEventListener('deviceorientation', this._deviceOrientationHandler);
+            window.addEventListener('devicemotion', this._deviceMotionHandler);
+            this._sensorsReady = true;
         },
 
         setupInput: function() {
@@ -446,18 +508,35 @@
         },
 
         loadAIModel: async function() {
-            if (typeof cocoSsd === 'undefined') {
-                const script = document.createElement('script');
-                script.src = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd";
-                document.head.appendChild(script);
-                script.onload = async () => {
-                    this.objectModel = await cocoSsd.load().catch(()=>null);
-                    this.changeState('CALIBRATION');
-                };
-            } else {
-                this.objectModel = await cocoSsd.load().catch(()=>null);
-                this.changeState('CALIBRATION');
-            }
+            const loadTask = new Promise(async (resolve) => {
+                try {
+                    if (typeof cocoSsd === 'undefined') {
+                        const script = document.createElement('script');
+                        script.src = "https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd";
+                        script.onload = async () => {
+                            this.objectModel = await cocoSsd.load().catch(() => null);
+                            resolve();
+                        };
+                        script.onerror = () => {
+                            this.objectModel = null;
+                            resolve();
+                        };
+                        document.head.appendChild(script);
+                    } else {
+                        this.objectModel = await cocoSsd.load().catch(() => null);
+                        resolve();
+                    }
+                } catch (e) {
+                    this.objectModel = null;
+                    resolve();
+                }
+            });
+
+            const timeoutTask = new Promise(resolve => setTimeout(resolve, 5000));
+            
+            await Promise.race([loadTask, timeoutTask]);
+            
+            this.changeState('CALIBRATION');
         },
 
         startAILoop: function() {
@@ -496,6 +575,12 @@
             this.lastTime = now;
             this.timeTotal += dt;
 
+            // Smooth Interpolations
+            if (isNaN(this.displayMoney)) this.displayMoney = 0;
+            if (isNaN(this.displayFuel)) this.displayFuel = 100;
+            this.displayMoney += (this.money - this.displayMoney) * 10 * dt;
+            this.displayFuel += (this.fuel - this.displayFuel) * 5 * dt;
+
             let fps = 1 / dt;
             let newInterval = (fps < 25) ? 1000 : 500;
             if (this.aiIntervalMs !== newInterval) {
@@ -506,6 +591,23 @@
             }
 
             if (!['FRONT_AR_OFFICE', 'ENTER_BASE_TRANSITION', 'EXIT_BASE_TRANSITION'].includes(this.state)) {
+                ctx.save();
+                
+                // Micro Oscillation (Premium Suspension Feel)
+                if (this.virtualSpeed > 0.1 && !this.isExtracting) {
+                    let susY = Math.sin(this.timeTotal * this.virtualSpeed * 1.5) * (this.virtualSpeed / this.stats.baseSpeed) * 3;
+                    ctx.translate(0, susY);
+                }
+
+                // Collect Zoom Effect
+                if (this.collectZoom > 0) {
+                    let z = 1 + (this.collectZoom * 0.03);
+                    ctx.translate(w/2, h/2);
+                    ctx.scale(z, z);
+                    ctx.translate(-w/2, -h/2);
+                    this.collectZoom -= dt * 2;
+                }
+
                 if (window.System?.video && window.System.video.readyState === 4) {
                     const vW = window.System.video.videoWidth || w;
                     const vH = window.System.video.videoHeight || h;
@@ -518,13 +620,23 @@
                 } else {
                     ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, w, h);
                 }
+                
+                // Base Flash Overlay
+                if (this.baseFlash > 0) {
+                    ctx.fillStyle = `rgba(0, 255, 100, ${this.baseFlash * 0.5})`;
+                    ctx.fillRect(0, 0, w, h);
+                    this.baseFlash -= dt * 1.5;
+                }
+
                 ctx.fillStyle = `rgba(0, 50, 60, ${0.1 + Math.sin(this.timeTotal*2)*0.05})`;
                 ctx.fillRect(0, 0, w, h);
+                
+                ctx.restore();
             }
 
             switch (this.state) {
                 case 'BOOT':
-                    this.drawOverlay(ctx, w, h, "INICIALIZANDO SISTEMAS", "Carregando Engine AR Híbrida...");
+                    this.drawOverlay(ctx, w, h, "INICIALIZANDO SISTEMAS", "Carregando Engine Premium...");
                     break;
                 case 'CALIBRATION':
                     this.drawOverlay(ctx, w, h, "CALIBRAR PONTO ZERO", "Aponte o caminhão para a pista e TOQUE NA TELA");
@@ -575,6 +687,8 @@
                     this.transitionPhase = 'SWITCH_CAM';
                     CameraManager[camFunc]().then(() => {
                         this.transitionPhase = 'FADE_IN';
+                    }).catch(() => {
+                        this.transitionPhase = 'FADE_IN';
                     });
                 }
             } else if (this.transitionPhase === 'SWITCH_CAM') {
@@ -597,9 +711,15 @@
         updatePhysics: function(dt) {
             if (this.cooldown > 0) this.cooldown -= dt;
 
-            this.targetSpeed = this.manualAccelerate ? this.stats.baseSpeed : Math.min(this.deviceForce * 5, this.stats.baseSpeed);
-            let accelRate = (this.manualAccelerate || this.deviceForce > 0.5) ? 4.0 : 2.0;
-            this.virtualSpeed += (this.targetSpeed - this.virtualSpeed) * dt * accelRate;
+            // Premium Feel: Aceleração e Drag Quadrático
+            let accelInput = (this.manualAccelerate || this.deviceForce > 0.5) ? (5.0 + this.upgrades.engine.lvl) : 0;
+            let drag = 0.05 * this.virtualSpeed * this.virtualSpeed; 
+            
+            if (accelInput > 0) {
+                let speedRatio = this.virtualSpeed / this.stats.baseSpeed;
+                this.virtualSpeed += accelInput * (1 - speedRatio * speedRatio) * dt * 8;
+            }
+            this.virtualSpeed -= drag * dt;
             this.virtualSpeed = Math.max(0, Math.min(this.virtualSpeed, this.stats.baseSpeed));
 
             if (this.state === 'TOW_MODE') {
@@ -622,18 +742,39 @@
                 this.vPos.x += Math.sin(rad) * currentSpeed * dt;
                 this.vPos.y -= Math.cos(rad) * currentSpeed * dt; 
 
+                // Wear Rate Physics Application
+                let wearMod = 1.0 - ((this.upgrades.truck?.lvl || 1) * 0.05);
+                this.wear.motor = Math.min(100, this.wear.motor + (this.stats.wearRate * wearMod * dt));
+                this.wear.wheels = Math.min(100, this.wear.wheels + (this.stats.wearRate * wearMod * 1.5 * dt));
+
+                let isHeavyLoad = (this.currentMission && this.currentMission.active && this.currentMission.type === 'HEAVY LOAD');
+                let heavyMod = isHeavyLoad ? 2.0 : 1.0;
+
+                // Combustível - Zero consumo se parado strict
                 let cargoWeight = this.cargo.length;
                 let baseDrain = 0.8 / 60; 
                 let speedDrain = this.virtualSpeed * 0.015;
-                let cargoDrain = cargoWeight * 0.01;
-                let effMod = Math.max(0.5, 1.0 - (this.upgrades.efficiency.lvl * 0.1));
+                let cargoDrain = cargoWeight * 0.01 * heavyMod;
                 
-                let fuelLoss = (baseDrain + speedDrain + cargoDrain) * effMod * dt;
+                let fuelLoss = (baseDrain + speedDrain + cargoDrain) * dt;
                 this.fuel = Math.max(0, Math.min(this.fuel - fuelLoss, this.stats.maxFuel));
+            } else {
+                this.fuel = Math.max(0, Math.min(this.fuel, this.stats.maxFuel));
             }
 
             if (this.fuel <= 0 && this.state !== 'TOW_MODE') {
+                this.fuel = 0; 
                 this.changeState('TOW_MODE');
+            }
+
+            // Mission Logic
+            if (this.currentMission && this.currentMission.active && this.currentMission.type === 'TIMED' && this.state !== 'TOW_MODE') {
+                this.currentMission.timer -= dt;
+                if (this.currentMission.timer <= 0) {
+                    this.currentMission.active = false;
+                    window.System.msg("TEMPO DA MISSÃO ESGOTADO!");
+                    if(window.Sfx && typeof window.Sfx.error === 'function') window.Sfx.error();
+                }
             }
         },
 
@@ -694,7 +835,7 @@
                 if (d < nearestDist) { nearestDist = d; this.activeAnomaly = ano; }
             });
 
-            if (nearestDist < 20 && this.cargo.length < this.stats.maxCargo && this.cooldown <= 0) {
+            if (this.activeAnomaly && nearestDist < 20 && this.cargo.length < this.stats.maxCargo && this.cooldown <= 0) {
                 
                 this.floorColor = this.getAverageColor(ctx, cx - 50, h * 0.85, 100, 40);
                 this.targetColor = this.getAverageColor(ctx, cx - 40, cy - 40, 80, 80);
@@ -728,7 +869,7 @@
                 }
             }
 
-            if (this.isExtracting) {
+            if (this.isExtracting && this.activeAnomaly) {
                 let actionForce = Math.max(this.virtualSpeed, this.manualAccelerate ? this.stats.baseSpeed : 0);
                 
                 if (actionForce > 1.0) {
@@ -756,20 +897,29 @@
                 ctx.beginPath(); ctx.arc(0, 0, ringSize, 0, Math.PI*2); ctx.stroke(); ctx.restore();
 
                 if (this.extractProgress >= 100) {
-                    if (this.activeAnomaly) {
-                        this.cargo.push(this.activeAnomaly.val);
-                        this.score += this.activeAnomaly.val / 10;
-                        window.System.msg(this.activeAnomaly.type === 'RARE' ? "CARGA RARA COLETADA!" : "COLETADO!");
-                        this.anomalies = this.anomalies.filter(a => a.id !== this.activeAnomaly.id);
+                    this.cargo.push(this.activeAnomaly.val);
+                    this.score += this.activeAnomaly.val / 10;
+                    window.System.msg(this.activeAnomaly.type === 'RARE' ? "CARGA RARA COLETADA!" : "COLETADO!");
+                    
+                    if (this.currentMission && this.currentMission.active) {
+                        this.currentMission.progress++;
+                        if (this.currentMission.progress >= this.currentMission.goal) {
+                            this.completeMission();
+                        }
                     }
+
+                    this.anomalies = this.anomalies.filter(a => a.id !== this.activeAnomaly.id);
                     this.isExtracting = false;
                     this.cooldown = 2.0; 
                     
                     if(window.Gfx) window.Gfx.shakeScreen(20);
+                    if(navigator.vibrate) navigator.vibrate([50, 50, 50]);
+                    this.collectGlow = 1.0;
+                    this.collectZoom = 1.0;
                     this.spawnParticles(cx, cy, 40, this.colors.main);
                 }
 
-                if (nearestDist > 30) {
+                if (this.activeAnomaly && nearestDist > 30) {
                     this.isExtracting = false;
                     window.System.msg("ALVO PERDIDO");
                 }
@@ -777,9 +927,13 @@
         },
 
         drawHUD: function(ctx, w, h) {
-            let fuelPct = this.fuel / this.stats.maxFuel;
-            if (fuelPct < 0.2 && Math.sin(this.timeTotal*10) > 0) {
-                ctx.fillStyle = "rgba(255, 0, 0, 0.2)"; ctx.fillRect(0,0,w,h);
+            let fuelPct = this.displayFuel / this.stats.maxFuel;
+            
+            // HUD Glow effects
+            if (this.collectGlow > 0) {
+                ctx.fillStyle = `rgba(0, 255, 255, ${this.collectGlow * 0.3})`;
+                ctx.fillRect(0, 0, w, h);
+                this.collectGlow -= 0.03;
             }
 
             ctx.fillStyle = this.colors.panel; ctx.fillRect(0, 0, w, 60);
@@ -788,14 +942,26 @@
             ctx.fillStyle = "#fff"; ctx.font = "bold 14px 'Chakra Petch'"; ctx.textAlign = "left";
             ctx.fillText(`LVL ${this.level} | VIDA: ${Math.floor(this.health)}%`, 20, 25);
             
+            // Premium Fuel Pulse
+            ctx.save();
+            if (fuelPct < 0.2) {
+                let pulse = 1 + Math.abs(Math.sin(this.timeTotal * 10)) * 0.05;
+                ctx.translate(20 + 75, 35 + 7.5); ctx.scale(pulse, pulse); ctx.translate(-(20 + 75), -(35 + 7.5));
+                ctx.fillStyle = "rgba(255, 0, 0, 0.2)"; ctx.fillRect(0,0,w,h);
+            }
             ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(20, 35, 150, 15);
             ctx.fillStyle = fuelPct > 0.2 ? this.colors.success : this.colors.danger;
             ctx.fillRect(20, 35, fuelPct * 150, 15);
             ctx.strokeStyle = "#fff"; ctx.strokeRect(20, 35, 150, 15);
             ctx.fillStyle = "#fff"; ctx.fillText("COMBUSTÍVEL", 25, 47);
+            ctx.restore();
 
+            // Premium Radar
             const rCx = w - 80; const rCy = 160; const rR = 60;
-            ctx.fillStyle = "rgba(0, 20, 40, 0.8)"; ctx.beginPath(); ctx.arc(rCx, rCy, rR, 0, Math.PI*2); ctx.fill();
+            let radarGradient = ctx.createRadialGradient(rCx, rCy, 0, rCx, rCy, rR);
+            radarGradient.addColorStop(0, "rgba(0, 50, 40, 0.9)");
+            radarGradient.addColorStop(1, "rgba(0, 10, 20, 0.7)");
+            ctx.fillStyle = radarGradient; ctx.beginPath(); ctx.arc(rCx, rCy, rR, 0, Math.PI*2); ctx.fill();
             ctx.strokeStyle = this.currentEvent ? this.colors.danger : this.colors.main; 
             ctx.lineWidth = 2; ctx.stroke();
 
@@ -814,6 +980,16 @@
             this.anomalies.forEach(a => drawBlip(a.x, a.y, a.type==='RARE'?this.colors.rare:this.colors.warn, 4, a.type==='RARE'));
             ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(rCx, rCy - 8); ctx.lineTo(rCx+5, rCy+5); ctx.lineTo(rCx-5, rCy+5); ctx.fill();
 
+            // Mission Display
+            if (this.currentMission && this.currentMission.active && this.state !== 'TOW_MODE') {
+                ctx.fillStyle = this.colors.warn; ctx.textAlign = "center";
+                ctx.font = "bold 16px 'Chakra Petch'";
+                ctx.fillText(`MISSÃO: ${this.currentMission.type} (${this.currentMission.progress}/${this.currentMission.goal})`, w/2, 35);
+                if (this.currentMission.type === 'TIMED') {
+                    ctx.fillText(`TEMPO: ${Math.floor(this.currentMission.timer)}s`, w/2, 55);
+                }
+            }
+
             let distToBase = Math.hypot(this.vPos.x, this.vPos.y);
             let atBase = distToBase < 30;
             ctx.fillStyle = atBase ? this.colors.success : "rgba(100,100,100,0.5)";
@@ -830,6 +1006,9 @@
             
             ctx.textAlign = "left"; ctx.fillStyle = "#fff"; ctx.font = "bold 18px 'Chakra Petch'";
             ctx.fillText(`CAÇAMBA: ${this.cargo.length}/${this.stats.maxCargo}`, 140, h - 25);
+            ctx.fillStyle = this.colors.success; ctx.font = "bold 24px 'Russo One'";
+            ctx.fillText(`R$ ${Math.floor(this.displayMoney).toLocaleString()}`, 300, h - 22);
+
             ctx.textAlign = "right"; ctx.fillStyle = this.colors.main;
             ctx.fillText(`DIST. BASE: ${Math.floor(distToBase)}m`, w - 20, h - 25);
             
@@ -844,6 +1023,11 @@
                 let total = this.cargo.reduce((a, b) => a + b, 0);
                 let effBonus = Math.floor(total * (this.fuel / this.stats.maxFuel) * 0.3); 
                 total += effBonus;
+
+                if (this.currentMission && this.currentMission.active && this.currentMission.type === 'HEAVY LOAD') {
+                    total = Math.floor(total * 1.5);
+                }
+
                 this.money += total;
                 this.score += total / 10;
                 
@@ -861,8 +1045,8 @@
 
         handleOfficeAction: function(actionId) {
             const buyObj = (cost, callback) => {
-                if (this.money >= cost && cost > 0) { this.money -= cost; callback(); return true; }
-                return false;
+                if (this.money >= cost && cost > 0) { this.money -= cost; callback(); if(window.Sfx) window.Sfx.coin(); return true; }
+                if(window.Sfx) window.Sfx.error(); return false;
             };
 
             let fuelCost = Math.floor((this.stats.maxFuel - this.fuel) * 2);
@@ -871,18 +1055,34 @@
             if (actionId === 'REFUEL') buyObj(fuelCost, () => this.fuel = this.stats.maxFuel);
             if (actionId === 'REPAIR') buyObj(repCost, () => { this.health = 100; });
             
+            if (actionId === 'UPG_ENGINE') {
+                let u = this.upgrades.engine;
+                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); this.applyStats(); });
+            }
             if (actionId === 'UPG_TANK') {
                 let u = this.upgrades.tank;
-                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); this.stats.maxFuel += 50; });
+                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); this.applyStats(); });
             }
-            if (actionId === 'UPG_EFF') {
-                let u = this.upgrades.efficiency;
-                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); });
+            if (actionId === 'UPG_RADAR') {
+                let u = this.upgrades.radar;
+                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); this.applyStats(); });
+            }
+            if (actionId === 'UPG_TRUCK') {
+                let u = this.upgrades.truck;
+                if (u.lvl < u.max) buyObj(u.cost, () => { u.lvl++; u.cost = Math.floor(u.cost*1.5); this.applyStats(); });
             }
 
             if (actionId === 'EXIT') {
                 this.changeState('EXIT_BASE_TRANSITION');
             }
+        },
+
+        applyStats: function() {
+            this.stats.baseSpeed = 20 + (this.upgrades.engine.lvl * 5);
+            this.stats.maxFuel = 100 + (this.upgrades.tank.lvl * 50);
+            this.stats.radarRange = 150 + (this.upgrades.radar.lvl * 50);
+            this.stats.wearRate = Math.max(0.1, 0.3 - (this.upgrades.truck.lvl * 0.05));
+            if (this.fuel > this.stats.maxFuel) this.fuel = this.stats.maxFuel;
         },
 
         drawOverlay: function(ctx, w, h, title, sub) {
@@ -918,15 +1118,17 @@
         cleanup: function() {
             this.stopAILoop();
             if (this.state === 'FRONT_AR_OFFICE') GestureOffice.destroy();
+            if (this._deviceOrientationHandler) window.removeEventListener('deviceorientation', this._deviceOrientationHandler);
+            if (this._deviceMotionHandler) window.removeEventListener('devicemotion', this._deviceMotionHandler);
         }
     };
 
     const regLoop = setInterval(() => {
         if(window.System && window.System.registerGame) {
-            window.System.registerGame('ar_truck_sim', 'AR Ops PRO', '🚀', Game, {
+            window.System.registerGame('ar_truck_sim', 'AR Ops Premium', '🚀', Game, {
                 camera: 'environment',
                 phases: [
-                    { id: 'f1', name: 'MISSÃO AR GLOBAL', desc: 'Gerencie a frota AR Híbrida via HUD e Gestos Reais.', reqLvl: 1 }
+                    { id: 'f1', name: 'MISSÃO AR GLOBAL', desc: 'Gerencie a frota AR Híbrida via HUD Premium.', reqLvl: 1 }
                 ]
             });
             clearInterval(regLoop);
