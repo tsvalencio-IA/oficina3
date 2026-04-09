@@ -1,710 +1,3 @@
-window.app = {};
-
-// =====================================================================
-// 1. CONFIGURAÇÃO NUVEM E SESSÃO (MULTI-TENANT)
-// =====================================================================
-app.firebaseConfig = {
-    apiKey: "AIzaSyBqIuCsHHuy_f-mBWV4JBkbyOorXpqQvqg",
-    authDomain: "hub-thiaguinho.firebaseapp.com",
-    projectId: "hub-thiaguinho",
-    storageBucket: "hub-thiaguinho.firebasestorage.app",
-    messagingSenderId: "453508098543",
-    appId: "1:453508098543:web:305f4d48edd9be40bd6e1a"
-};
-
-if (!firebase.apps.length) firebase.initializeApp(app.firebaseConfig);
-app.db = firebase.firestore();
-
-// Credenciais dinâmicas
-app.CLOUDINARY_CLOUD_NAME = sessionStorage.getItem('t_cloudName') || 'dmuvm1o6m'; 
-app.CLOUDINARY_UPLOAD_PRESET = sessionStorage.getItem('t_cloudPreset') || 'evolution'; 
-app.t_id = sessionStorage.getItem('t_id');
-app.t_nome = sessionStorage.getItem('t_nome');
-app.t_role = sessionStorage.getItem('t_role'); 
-app.user_nome = sessionStorage.getItem('f_nome');
-app.user_comissao_mo = parseFloat(sessionStorage.getItem('f_comissao') || 0); 
-app.user_comissao_pecas = parseFloat(sessionStorage.getItem('f_comissao_pecas') || 0);
-
-if (!app.t_id) window.location.replace('index.html');
-
-// Bancos de Dados Locais na Memória
-app.bancoOSCompleto = [];
-app.bancoEstoque = [];
-app.bancoFin = [];
-app.bancoCrm = [];
-app.bancoIA = [];
-app.bancoMensagens = [];
-app.bancoAuditoria = [];
-app.bancoEquipe = []; 
-app.bancoVales = [];
-app.fotosOSAtual = [];
-app.historicoOSAtual = [];
-app.chatActiveClienteId = null;
-app.osParaFaturar = null;
-
-app.filtroFinDataInicio = null;
-app.filtroFinDataFim = null;
-app.bancoFinFiltrado = [];
-
-// =====================================================================
-// MOTOR DE AUDITORIA GLOBAL (PADRÃO CHEVRON B2B)
-// =====================================================================
-app.registrarAuditoriaGlobal = async function(modulo, acaoRealizada) {
-    try {
-        await app.db.collection('lixeira_auditoria').add({
-            tenantId: app.t_id,
-            apagadoEm: new Date().toISOString(),
-            apagadoPor: app.user_nome,
-            placaOriginal: modulo,
-            motivo: acaoRealizada
-        });
-    } catch(e) { console.error("Erro ao registrar auditoria: ", e); }
-};
-
-// =====================================================================
-// 2. INICIALIZAÇÃO DA INTERFACE (RBAC) E NAVEGAÇÃO
-// =====================================================================
-document.addEventListener('DOMContentLoaded', () => {
-    const lblEmpresa = document.getElementById('lblEmpresa'); if(lblEmpresa) lblEmpresa.innerText = app.t_nome;
-    const lblUsuario = document.getElementById('lblUsuario'); if(lblUsuario) lblUsuario.innerText = app.user_nome;
-    
-    // Controle de Acesso Dinâmico (RBAC)
-    const style = document.createElement('style');
-    if (app.t_role === 'equipe') {
-        style.innerHTML = '.admin-only, .gestao-only { display: none !important; } .mecanico-only { display: flex !important; display: block !important; }';
-        const lblCom = document.getElementById('lblComissaoUser');
-        if(lblCom) lblCom.innerText = `Mecânico (MO: ${app.user_comissao_mo}% | Pç: ${app.user_comissao_pecas}%)`;
-    } else if (app.t_role === 'gerente') {
-        style.innerHTML = '.admin-only, .mecanico-only { display: none !important; } .gestao-only { display: block !important; display: inline-block !important; } tr .gestao-only, th.gestao-only, td.gestao-only { display: table-cell !important; }';
-        const lblCom = document.getElementById('lblComissaoUser');
-        if(lblCom) lblCom.innerText = `Gestor / Vendedor`;
-    } else {
-        style.innerHTML = '.mecanico-only { display: none !important; } .gestao-only, .admin-only { display: block !important; display: inline-block !important; } tr .gestao-only, th.gestao-only, td.gestao-only { display: table-cell !important; }';
-        const lblCom = document.getElementById('lblComissaoUser');
-        if(lblCom) lblCom.innerText = `Admin Proprietário`;
-    }
-    document.head.appendChild(style);
-
-    app.construirMenuLateral();
-    const linkInicio = document.querySelector('.nav-sidebar .nav-link');
-    if(linkInicio) app.mostrarTela('tela_jarvis', 'thIAguinho Inteligência Automotiva', linkInicio);
-    
-    app.iniciarEscutaOS();
-    app.iniciarEscutaCrm();
-    app.iniciarEscutaMensagens();
-    app.iniciarEscutaMensagensInternas();
-    app.iniciarEscutaEquipeInternaParaBox(); 
-    app.iniciarEscutaIA();
-    
-    if(app.t_role === 'admin' || app.t_role === 'gerente') {
-        app.iniciarEscutaEstoque();
-        app.iniciarEscutaFinanceiro();
-        app.iniciarEscutaValesRH();
-    }
-    if(app.t_role === 'admin') {
-        app.iniciarEscutaLixeira();
-    }
-    app.configurarCloudinary();
-});
-
-app.iniciarEscutaEquipeInternaParaBox = function() {
-    app.db.collection('funcionarios').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoEquipe = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        app.renderizarEquipeRH();
-    });
-};
-
-app.iniciarEscutaValesRH = function() {
-    app.db.collection('vales_rh').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoVales = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        app.renderizarEquipeRH();
-    });
-};
-
-// =====================================================================
-// TOASTS DESTRUTIVOS (Resolve o bug da tela travada)
-// =====================================================================
-app.showToast = function(msg, type='success') {
-    const bg = type === 'success' ? 'bg-success' : type === 'error' ? 'bg-danger' : 'bg-warning text-dark';
-    const icon = type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill';
-    
-    const wrap = document.createElement('div');
-    wrap.innerHTML = `<div class="toast align-items-center text-white ${bg} border-0 show p-3 mt-2 shadow-lg rounded-3" role="alert" aria-live="assertive" aria-atomic="true" style="transition: opacity 0.5s ease;">
-                        <div class="d-flex">
-                            <div class="toast-body fw-bold"><i class="bi ${icon} me-2"></i> ${msg}</div>
-                            <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
-                        </div>
-                      </div>`;
-                      
-    const toastEl = wrap.firstElementChild;
-    const container = document.getElementById('toastContainer');
-    if (container) {
-        container.appendChild(toastEl);
-        // Auto-destruição após 4 segundos
-        setTimeout(() => {
-            toastEl.style.opacity = '0';
-            setTimeout(() => toastEl.remove(), 500);
-        }, 4000);
-    }
-};
-
-app.sair = function() { sessionStorage.clear(); window.location.href = 'index.html'; };
-
-app.construirMenuLateral = function() {
-    const menu = document.getElementById('menuLateral'); if (!menu) return;
-    let html = `<a class="nav-link active" onclick="app.mostrarTela('tela_jarvis', 'Central thIAguinho', this)"><i class="bi bi-robot"></i> Central thIAguinho (I.A)</a>`;
-    html += `<a class="nav-link" onclick="app.mostrarTela('tela_os', 'Pátio Kanban', this)"><i class="bi bi-kanban text-info"></i> Pátio Kanban (O.S)</a>`;
-    html += `<a class="nav-link" onclick="app.mostrarTela('tela_arquivo', 'Arquivo Morto', this); app.renderizarTabelaArquivo();"><i class="bi bi-archive text-warning"></i> Arquivo Morto / Entregues</a>`;
-    html += `<a class="nav-link" onclick="app.mostrarTela('tela_chat_interno', 'Chat Equipe', this)"><i class="bi bi-headset text-warning"></i> Chat Equipe Interna</a>`;
-    
-    if (app.t_role === 'admin' || app.t_role === 'gerente') {
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_crm', 'Base CRM', this)"><i class="bi bi-person-vcard text-info"></i> CRM e Clientes</a>`;
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_chat', 'Chat CRM Global', this)"><i class="bi bi-chat-dots-fill text-primary"></i> Chat Global c/ Cliente <span id="chatBadgeGlobal" class="badge bg-danger badge-nav d-none">0</span></a>`;
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_estoque', 'Armazém / Estoque', this)"><i class="bi bi-box-seam text-primary"></i> Estoque Físico e NFs</a>`;
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_financeiro', 'DRE e Caixas', this)"><i class="bi bi-bank text-success"></i> Financeiro / DRE</a>`;
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_equipe', 'Gestão de RH e Equipe', this); app.renderizarEquipeRH();"><i class="bi bi-people-fill text-success"></i> Equipe e RH</a>`;
-    }
-    if (app.t_role === 'admin') {
-        html += `<a class="nav-link" onclick="app.mostrarTela('tela_ia', 'Treinamento I.A.', this)"><i class="bi bi-database-fill-up text-warning"></i> Base RAG / Manuais I.A.</a>`;
-    }
-    menu.innerHTML = html;
-};
-
-app.mostrarTela = function(id, titulo, btn) {
-    document.querySelectorAll('.modulo-tela').forEach(t => t.style.display = 'none');
-    const tela = document.getElementById(id); if(tela) tela.style.display = 'block';
-    const hTitulo = document.getElementById('tituloPagina'); if(hTitulo) hTitulo.innerText = titulo;
-    if(btn) { document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-};
-
-// =====================================================================
-// 3. CRM E INTEGRAÇÃO PORTAL DO CLIENTE
-// =====================================================================
-app.buscarCEP = function(cep) {
-    cep = cep.replace(/\D/g, ''); if(cep.length !== 8) return;
-    fetch(`https://viacep.com.br/ws/${cep}/json/`).then(res => res.json()).then(data => {
-        if(!data.erro) {
-            if(document.getElementById('c_rua')) document.getElementById('c_rua').value = data.logradouro;
-            if(document.getElementById('c_bairro')) document.getElementById('c_bairro').value = data.bairro;
-            if(document.getElementById('c_cidade')) document.getElementById('c_cidade').value = data.localidade;
-        }
-    });
-};
-
-app.validarDocUI = function(input) {
-    const val = input.value.replace(/\D/g, '');
-    if(val.length > 0) { input.classList.remove('border-danger'); input.classList.add('border-success'); }
-};
-
-app.iniciarEscutaCrm = function() {
-    app.db.collection('clientes_base').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoCrm = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const tb = document.getElementById('tabelaCrmCorpo');
-        if(tb) {
-            tb.innerHTML = app.bancoCrm.map(c => `<tr><td><strong class="text-white">${c.nome}</strong></td><td>${c.documento||'-'}</td><td>${c.telefone}</td><td class="text-info">${c.usuario || 'S/Acesso'}</td><td class="gestao-only text-end"><button class="btn btn-sm btn-outline-info me-1 border-0 shadow-sm" onclick="app.abrirModalCRM('edit', '${c.id}')"><i class="bi bi-pencil"></i> Editar</button><button class="btn btn-sm btn-outline-danger border-0 admin-only shadow-sm" onclick="app.apagarCliente('${c.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('');
-        }
-        const list = document.getElementById('listaClientesCRM');
-        if(list) list.innerHTML = app.bancoCrm.map(c => `<option value="${c.nome}" data-id="${c.id}">Tel: ${c.telefone}</option>`).join('');
-        app.renderListaChatCRM();
-    });
-};
-
-app.abrirModalCRM = function(mode = 'nova', id = '') {
-    const frm = document.getElementById('formCrm'); if(frm) frm.reset();
-    if(document.getElementById('crm_id')) document.getElementById('crm_id').value = '';
-    if(document.getElementById('c_pass')) document.getElementById('c_pass').value = Math.random().toString(36).slice(-6);
-    
-    if(mode === 'edit') {
-        const c = app.bancoCrm.find(x => x.id === id);
-        if(c) {
-            if(document.getElementById('crm_id')) document.getElementById('crm_id').value = c.id; 
-            if(document.getElementById('c_nome')) document.getElementById('c_nome').value = c.nome || ''; 
-            if(document.getElementById('c_tel')) document.getElementById('c_tel').value = c.telefone || ''; 
-            if(document.getElementById('c_doc')) document.getElementById('c_doc').value = c.documento || ''; 
-            if(document.getElementById('c_email')) document.getElementById('c_email').value = c.email || '';
-            if(document.getElementById('c_cep')) document.getElementById('c_cep').value = c.cep || ''; 
-            if(document.getElementById('c_rua')) document.getElementById('c_rua').value = c.rua || '';
-            if(document.getElementById('c_num')) document.getElementById('c_num').value = c.num || ''; 
-            if(document.getElementById('c_bairro')) document.getElementById('c_bairro').value = c.bairro || '';
-            if(document.getElementById('c_cidade')) document.getElementById('c_cidade').value = c.cidade || '';
-            if(document.getElementById('c_user')) document.getElementById('c_user').value = c.usuario || ''; 
-            if(document.getElementById('c_pass')) document.getElementById('c_pass').value = c.senha || ''; 
-            if(document.getElementById('c_notas')) document.getElementById('c_notas').value = c.anotacoes || '';
-        }
-    }
-    const modal = document.getElementById('modalCrm'); if(modal) new bootstrap.Modal(modal).show();
-};
-
-app.salvarClienteCRM = async function(e) {
-    e.preventDefault();
-    const idField = document.getElementById('crm_id'); const id = idField ? idField.value : '';
-    const docElem = document.getElementById('c_doc'); const docValue = docElem ? docElem.value.replace(/\D/g, '') : '';
-    const nomeCli = document.getElementById('c_nome') ? document.getElementById('c_nome').value : '';
-    
-    const payload = { 
-        tenantId: app.t_id, nome: nomeCli, telefone: document.getElementById('c_tel') ? document.getElementById('c_tel').value : '', 
-        documento: docValue, email: document.getElementById('c_email') ? document.getElementById('c_email').value : '',
-        cep: document.getElementById('c_cep') ? document.getElementById('c_cep').value : '', rua: document.getElementById('c_rua') ? document.getElementById('c_rua').value : '', 
-        num: document.getElementById('c_num') ? document.getElementById('c_num').value : '', bairro: document.getElementById('c_bairro') ? document.getElementById('c_bairro').value : '', 
-        cidade: document.getElementById('c_cidade') ? document.getElementById('c_cidade').value : '', usuario: document.getElementById('c_user') ? document.getElementById('c_user').value.trim() : '', 
-        senha: document.getElementById('c_pass') ? document.getElementById('c_pass').value.trim() : '', anotacoes: document.getElementById('c_notas') ? document.getElementById('c_notas').value : '' 
-    };
-    
-    if(id) { 
-        await app.db.collection('clientes_base').doc(id).update(payload); 
-        app.showToast("Ficha do cliente atualizada com sucesso.");
-        app.registrarAuditoriaGlobal("CRM Cliente", `Editou os dados do cliente: ${nomeCli}`);
-    } else { 
-        await app.db.collection('clientes_base').add(payload); 
-        app.showToast("Novo cliente registrado no CRM."); 
-        app.registrarAuditoriaGlobal("CRM Cliente", `Cadastrou o novo cliente: ${nomeCli}`);
-    }
-    
-    e.target.reset(); const modal = document.getElementById('modalCrm'); if(modal) bootstrap.Modal.getInstance(modal).hide();
-};
-
-app.apagarCliente = async function(id) {
-    if(app.t_role !== 'admin') { app.showToast("Apenas o proprietário pode apagar clientes.", "error"); return; }
-    if(confirm("Apagar cliente? O histórico associado não será apagado, mas o perfil deixará de existir.")) { 
-        const c = app.bancoCrm.find(x => x.id === id);
-        await app.db.collection('clientes_base').doc(id).delete(); 
-        app.showToast("Cliente Removido.", "success"); 
-        app.registrarAuditoriaGlobal("CRM Cliente", `Deletou permanentemente o cliente: ${c ? c.nome : id}`);
-    }
-};
-
-app.aoSelecionarClienteOS = function() {
-    const nomeDigitado = document.getElementById('os_cliente').value.trim();
-    const cliente = app.bancoCrm.find(c => c.nome.toLowerCase() === nomeDigitado.toLowerCase());
-    if(cliente) { 
-        if(document.getElementById('os_celular')) document.getElementById('os_celular').value = cliente.telefone || ''; 
-        if(document.getElementById('os_cliente_id')) document.getElementById('os_cliente_id').value = cliente.id; 
-    }
-};
-
-app.editarClienteRapido = function() {
-    const nome = document.getElementById('os_cliente').value.trim();
-    const cliente = app.bancoCrm.find(c => c.nome.toLowerCase() === nome.toLowerCase());
-    if(cliente) { app.abrirModalCRM('edit', cliente.id); } 
-    else { if(document.getElementById('c_nome')) document.getElementById('c_nome').value = nome; app.abrirModalCRM('nova'); }
-};
-
-app.enviarWhatsAppAprovacao = function() {
-    const nome = document.getElementById('os_cliente').value;
-    const cel = document.getElementById('os_celular').value;
-    const cZ = app.bancoCrm.find(x => x.nome === nome);
-    if(!cel) return app.showToast("Celular não informado na O.S.", "error");
-    
-    let baseURL = window.location.origin + window.location.pathname.replace('painel_oficina.html', '');
-    const u = baseURL + 'clientes/projeto_oficina.html';
-    
-    let txt = `Olá ${nome}! A O.S. do seu veículo foi atualizada na *${app.t_nome}*.\nAcesse o nosso portal oficial para acompanhar as fotos da revisão, verificar o orçamento e aprovar os serviços pelo chat:\n👉 ${u}`;
-    if(cZ && cZ.usuario) { txt += `\n\n*Suas Credenciais Seguras:*\nLogin: ${cZ.usuario}\nPIN: ${cZ.senha}`; }
-    
-    window.open(`https://wa.me/55${cel.replace(/\D/g, '')}?text=${encodeURIComponent(txt)}`, '_blank');
-};
-
-
-// =====================================================================
-// 4. MÓDULOS DE CHAT (GLOBAL PARA CLIENTES E INTERNO PARA EQUIPE)
-// =====================================================================
-app.iniciarEscutaMensagens = function() {
-    app.db.collection('mensagens').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoMensagens = snap.docs.map(d => ({id: d.id, ...d.data()}));
-        app.bancoMensagens.sort((a,b) => (a.timestamp?.toMillis()||0) - (b.timestamp?.toMillis()||0));
-        
-        let nL = 0; app.bancoMensagens.forEach(m => { if(m.sender === 'cliente' && !m.lidaAdmin) nL++; });
-        const badge = document.getElementById('chatBadgeGlobal');
-        if(badge) { if(nL > 0) { badge.innerText = nL; badge.classList.remove('d-none'); } else { badge.classList.add('d-none'); } }
-        
-        app.renderListaChatCRM();
-        if(app.chatActiveClienteId) {
-            const h = document.getElementById('chatNomeCliente');
-            app.abrirChatCRM(app.chatActiveClienteId, h ? h.innerText.replace('Atendimento Ativo: ', '') : 'Cliente');
-        }
-    });
-};
-
-app.renderListaChatCRM = function() {
-    const lista = document.getElementById('chatListaClientesCRM'); if(!lista) return;
-    lista.innerHTML = app.bancoCrm.map(c => {
-        const naoLidas = app.bancoMensagens.filter(m => m.clienteId === c.id && m.sender === 'cliente' && !m.lidaAdmin).length;
-        const bHtml = naoLidas > 0 ? `<span class="badge bg-danger ms-2">${naoLidas}</span>` : '';
-        return `<button class="list-group-item list-group-item-action bg-transparent text-white border-secondary py-3 d-flex justify-content-between align-items-center" onclick="app.abrirChatCRM('${c.id}', '${c.nome}')">
-            <span><i class="bi bi-person-circle text-primary me-2"></i> ${c.nome}</span>${bHtml}
-        </button>`;
-    }).join('');
-};
-
-app.abrirChatCRM = function(clienteId, nomeCliente) {
-    app.chatActiveClienteId = clienteId;
-    const header = document.getElementById('chatNomeCliente');
-    if(header) header.innerHTML = `<span class="text-white-50">Atendimento Ativo:</span> <b class="text-accent fs-5">${nomeCliente}</b>`;
-    
-    const inputArea = document.getElementById('chatAreaInputGlobal'); if(inputArea) inputArea.style.display = 'flex';
-    const area = document.getElementById('chatAreaMsgGlobal'); if(!area) return;
-    area.innerHTML = '';
-    
-    const mD = app.bancoMensagens.filter(x => x.clienteId === clienteId);
-    if(mD.length === 0) {
-        area.innerHTML = '<div class="text-center text-white-50 mt-5 pt-5"><i class="bi bi-chat-dots display-1 mb-4 opacity-50"></i><p>Inicie o Atendimento.</p></div>';
-    } else {
-        mD.forEach(x => {
-            if(x.sender === 'cliente' && !x.lidaAdmin) { app.db.collection('mensagens').doc(x.id).update({lidaAdmin: true}); }
-            const t = x.timestamp ? new Date(x.timestamp.toDate()).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : 'agora';
-            let c = x.text;
-            
-            if(x.fileUrl) {
-                if(x.fileType === 'video' || x.fileUrl.includes('.mp4')) c += `<br><video src="${x.fileUrl}" controls style="max-width:100%; border-radius:8px; margin-top:5px;"></video>`;
-                else if(x.fileType === 'audio' || x.fileUrl.includes('.mp3') || x.fileUrl.includes('.ogg')) c += `<br><audio src="${x.fileUrl}" controls style="max-width:100%; margin-top:5px;"></audio>`;
-                else if(x.fileUrl.includes('.pdf')) c += `<br><a href="${x.fileUrl}" target="_blank" class="btn btn-sm btn-dark mt-2"><i class="bi bi-file-pdf text-danger"></i> Abrir PDF</a>`;
-                else c += `<br><img src="${x.fileUrl}" onclick="window.open('${x.fileUrl}')" style="max-width:100%; border-radius:8px; cursor:pointer; margin-top:5px;">`;
-            }
-            area.innerHTML += `<div class="message ${x.sender === 'admin' ? 'admin shadow-sm' : 'cliente shadow-sm'}">${c}<small class="d-block text-end mt-1" style="font-size:0.7rem;opacity:0.7;">${t}</small></div>`;
-        });
-        area.scrollTop = area.scrollHeight;
-    }
-};
-
-app.enviarMensagemChatGlobal = async function() {
-    const input = document.getElementById('inputChatGlobal'); const val = input ? input.value.trim() : '';
-    if(!val || !app.chatActiveClienteId) return;
-    await app.db.collection('mensagens').add({ tenantId: app.t_id, clienteId: app.chatActiveClienteId, sender: 'admin', text: val, lidaCliente: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-    input.value = '';
-};
-
-app.enviarAnexoChatGlobal = async function() {
-    const inp = document.getElementById('chatFileInputGlobal');
-    if(!inp || !inp.files || inp.files.length === 0 || !app.chatActiveClienteId) return;
-    app.showToast("Realizando Upload Seguro na Nuvem...", "warning");
-    try {
-        const fd = new FormData(); fd.append('file', inp.files[0]); fd.append('upload_preset', app.CLOUDINARY_UPLOAD_PRESET);
-        const res = await fetch(`https://api.cloudinary.com/v1_1/${app.CLOUDINARY_CLOUD_NAME}/auto/upload`, {method:'POST', body:fd});
-        const data = await res.json();
-        if(data.secure_url) {
-            await app.db.collection('mensagens').add({ tenantId: app.t_id, clienteId: app.chatActiveClienteId, sender: 'admin', text: "📎 Evidência da Oficina:", fileUrl: data.secure_url, fileType: data.resource_type, lidaCliente: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-            inp.value = ''; app.showToast("Anexo enviado com sucesso para o cliente!", "success");
-        }
-    } catch(e) { console.error(e); app.showToast("Falha no envio da imagem.", "error"); }
-};
-
-// Chat Interno Equipe <-> Gestor
-app.iniciarEscutaMensagensInternas = function() {
-    app.db.collection('chat_interno').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        let msgs = snap.docs.map(d => d.data());
-        msgs.sort((a,b) => (a.timestamp?.toMillis()||0) - (b.timestamp?.toMillis()||0));
-        const area = document.getElementById('chatAreaMsgInterno');
-        if(area) {
-            if(msgs.length === 0) area.innerHTML = '<div class="text-center text-white-50 mt-5 pt-5"><i class="bi bi-headset display-1 opacity-25"></i><p>O chat da equipa está limpo. Comece a comunicação.</p></div>';
-            else {
-                area.innerHTML = msgs.map(m => {
-                    const t = m.timestamp ? new Date(m.timestamp.toDate()).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : 'agora';
-                    const cssClass = m.usuario === app.user_nome ? 'admin' : 'cliente'; 
-                    return `<div class="message ${cssClass} shadow-sm"><strong>${m.usuario}:</strong><br>${m.text}<small class="d-block text-end mt-1" style="font-size:0.7rem;opacity:0.7;">${t}</small></div>`;
-                }).join('');
-                area.scrollTop = area.scrollHeight;
-            }
-        }
-    });
-};
-
-app.enviarMensagemInterna = async function() {
-    const inp = document.getElementById('inputChatInterno'); if(!inp || !inp.value.trim()) return;
-    await app.db.collection('chat_interno').add({ tenantId: app.t_id, usuario: app.user_nome, text: inp.value.trim(), timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-    inp.value = '';
-};
-
-// =====================================================================
-// 5. ESTOQUE FÍSICO COM SKU E ENTRADA DE N.F. (XML MÁGICO)
-// =====================================================================
-app.iniciarEscutaEstoque = function() {
-    app.db.collection('estoque').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoEstoque = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const tbody = document.getElementById('tabelaEstoqueCorpo');
-        if(tbody) {
-            tbody.innerHTML = app.bancoEstoque.map(p => `<tr><td><small class="text-white-50">${p.fornecedor||'N/A'}</small><br><span class="badge bg-primary">NF: ${p.nf||'S/N'}</span></td><td><span class="text-warning fw-bold font-monospace">${p.sku||'-'}</span></td><td><span class="text-info small">[NCM: ${p.ncm||'-'}]</span></td><td><strong class="text-white">${p.desc}</strong></td><td><span class="badge bg-secondary px-3 py-2 fs-6 shadow-sm">${p.qtd} un</span></td><td class="gestao-only text-danger fw-bold">R$ ${p.custo.toFixed(2)}</td><td class="text-success fw-bold fs-6">R$ ${p.venda.toFixed(2)}</td><td class="gestao-only text-end"><button class="btn btn-sm btn-outline-info shadow-sm me-1" onclick="app.abrirModalNF('edit', '${p.id}')"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger shadow-sm admin-only" onclick="app.apagarProduto('${p.id}')"><i class="bi bi-trash-fill"></i></button></td></tr>`).join('');
-        }
-        const sel = document.getElementById('selectProdutoEstoque');
-        if(sel) {
-            sel.innerHTML = '<option value="">Puxar Peça do Almoxarifado / Estoque Físico...</option>' + app.bancoEstoque.filter(p=>p.qtd>0).map(p => `<option value="${p.id}" data-venda="${p.venda}" data-custo="${p.custo}" data-desc="${p.desc}" data-ncm="${p.ncm||'-'}">[Est: ${p.qtd}] - ${p.sku ? '('+p.sku+') ' : ''}${p.desc} (R$ ${p.venda.toFixed(2)})</option>`).join('');
-        }
-    });
-};
-
-app.abrirModalNF = function(mode='nova', id='') {
-    const frm = document.getElementById('formNF'); if(frm) frm.reset();
-    if(document.getElementById('corpoItensNF')) document.getElementById('corpoItensNF').innerHTML = '';
-    if(document.getElementById('p_id')) document.getElementById('p_id').value = '';
-    if(document.getElementById('nf_data')) document.getElementById('nf_data').value = new Date().toISOString().split('T')[0];
-    
-    if(mode === 'edit') {
-        const p = app.bancoEstoque.find(x => x.id === id);
-        if(p) {
-            if(document.getElementById('p_id')) document.getElementById('p_id').value = p.id;
-            if(document.getElementById('nf_fornecedor')) document.getElementById('nf_fornecedor').value = p.fornecedor || '';
-            if(document.getElementById('nf_numero')) document.getElementById('nf_numero').value = p.nf || '';
-            if(document.getElementById('nf_data')) document.getElementById('nf_data').value = p.dataEntrada ? p.dataEntrada.split('T')[0] : new Date().toISOString().split('T')[0];
-            app.adicionarLinhaNF(p.desc, p.ncm, p.cfop, p.qtd, p.custo, p.venda, p.sku);
-        }
-    } else { app.adicionarLinhaNF('', '', '', 1, 0, 0, ''); }
-    
-    const mod = document.getElementById('modalNF'); if(mod) new bootstrap.Modal(mod).show();
-};
-
-app.processarXML = function(event) {
-    const file = event.target.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const xmlText = e.target.result; const parser = new DOMParser(); const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-        const emit = xmlDoc.getElementsByTagName("emit")[0]; 
-        if(emit && document.getElementById('nf_fornecedor')) { const xNome = emit.getElementsByTagName("xNome")[0]; if(xNome) document.getElementById('nf_fornecedor').value = xNome.textContent; }
-        const ide = xmlDoc.getElementsByTagName("ide")[0]; 
-        if(ide && document.getElementById('nf_numero')) { const nNF = ide.getElementsByTagName("nNF")[0]; if(nNF) document.getElementById('nf_numero').value = nNF.textContent; }
-        
-        const det = xmlDoc.getElementsByTagName("det");
-        if(document.getElementById('corpoItensNF')) document.getElementById('corpoItensNF').innerHTML = ''; 
-        for(let i=0; i<det.length; i++) {
-            const prod = det[i].getElementsByTagName("prod")[0];
-            if(prod) {
-                const sku = prod.getElementsByTagName("cProd")[0]?.textContent || '';
-                const desc = prod.getElementsByTagName("xProd")[0]?.textContent || ''; const ncm = prod.getElementsByTagName("NCM")[0]?.textContent || ''; const cfop = prod.getElementsByTagName("CFOP")[0]?.textContent || '';
-                const qtd = parseFloat(prod.getElementsByTagName("qCom")[0]?.textContent || 0); const vUnCom = parseFloat(prod.getElementsByTagName("vUnCom")[0]?.textContent || 0);
-                app.adicionarLinhaNF(desc, ncm, cfop, qtd, vUnCom, (vUnCom * 1.8), sku); 
-            }
-        }
-        app.showToast("XML lido com sucesso. Modifique a sua margem de venda final na tabela.", "success");
-    };
-    reader.readAsText(file);
-};
-
-app.adicionarLinhaNF = function(desc='', ncm='', cfop='', qtd=1, custo=0, venda=0, sku='') {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td><input type="text" class="form-control form-control-sm bg-dark text-warning border-secondary p-2 font-monospace it-sku" value="${sku}" placeholder="Cód..."></td>
-                    <td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-2 it-desc" value="${desc}" required></td>
-                    <td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-2 it-ncm" value="${ncm}"></td>
-                    <td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-2 it-cfop" value="${cfop}"></td>
-                    <td><input type="number" class="form-control form-control-sm bg-dark text-white border-secondary p-2 it-qtd" value="${qtd}" min="1"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-danger border-secondary p-2 it-custo" value="${custo}"></td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-success border-secondary p-2 it-venda fw-bold" value="${venda}"></td>
-                    <td><button type="button" class="btn btn-sm btn-outline-danger p-0 px-2 mt-1" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>`;
-    const tb = document.getElementById('corpoItensNF'); if(tb) tb.appendChild(tr);
-};
-
-app.verificarPgtoCompraNF = function() {
-    const fElem = document.getElementById('nf_metodo_pagamento'); const d = document.getElementById('nf_div_parcelas');
-    if(!fElem || !d) return; const f = fElem.value;
-    if(f.includes('Parcelado') || f.includes('Prazo')) { d.style.display = 'block'; } else { d.style.display = 'none'; if(document.getElementById('nf_parcelas')) document.getElementById('nf_parcelas').value = "1x"; }
-};
-
-app.salvarEntradaEstoque = async function(e) {
-    e.preventDefault();
-    const idField = document.getElementById('p_id'); const id = idField ? idField.value : '';
-    const fornecedor = document.getElementById('nf_fornecedor') ? document.getElementById('nf_fornecedor').value : ''; 
-    const nf = document.getElementById('nf_numero') ? document.getElementById('nf_numero').value : '';
-    const dtBase = document.getElementById('nf_data') ? document.getElementById('nf_data').value : new Date().toISOString().split('T')[0];
-    const fp = document.getElementById('nf_metodo_pagamento') ? document.getElementById('nf_metodo_pagamento').value : ''; 
-    const parc = document.getElementById('nf_parcelas') ? document.getElementById('nf_parcelas').value : '1x';
-    const gerarFinanceiro = document.getElementById('nf_gerar_financeiro') ? document.getElementById('nf_gerar_financeiro').checked : false;
-    
-    let totalCustoGlobalNF = 0; const batch = app.db.batch();
-    
-    if(id) {
-        const tr = document.querySelector('#corpoItensNF tr');
-        if(tr) {
-            batch.update(app.db.collection('estoque').doc(id), { fornecedor, nf, desc: tr.querySelector('.it-desc').value, sku: tr.querySelector('.it-sku').value.trim(), qtd: parseFloat(tr.querySelector('.it-qtd').value), custo: parseFloat(tr.querySelector('.it-custo').value), venda: parseFloat(tr.querySelector('.it-venda').value), ncm: tr.querySelector('.it-ncm').value, cfop: tr.querySelector('.it-cfop').value });
-            app.registrarAuditoriaGlobal("Estoque", `Editou o item do fornecedor ${fornecedor}`);
-        }
-    } else {
-        document.querySelectorAll('#corpoItensNF tr').forEach(tr => {
-            const desc = tr.querySelector('.it-desc').value.trim(); const sku = tr.querySelector('.it-sku').value.trim(); const q = parseFloat(tr.querySelector('.it-qtd').value)||0; const c = parseFloat(tr.querySelector('.it-custo').value)||0; const v = parseFloat(tr.querySelector('.it-venda').value)||0;
-            if(desc !== '' && q > 0) {
-                totalCustoGlobalNF += (q * c);
-                batch.set(app.db.collection('estoque').doc(), { tenantId: app.t_id, fornecedor: fornecedor, nf: nf, sku: sku, desc: desc, qtd: q, custo: c, venda: v, ncm: tr.querySelector('.it-ncm').value, cfop: tr.querySelector('.it-cfop').value, usuarioEntrada: app.user_nome, dataEntrada: new Date().toISOString() });
-            }
-        });
-        if(totalCustoGlobalNF === 0) { app.showToast("Nenhum item válido para dar entrada.", "error"); return; }
-
-        if(gerarFinanceiro) {
-            let nP = 1; if(fp.includes('Parcelado') || fp.includes('Prazo')) { if(parc.includes('2x')) nP = 2; else if(parc.includes('3x')) nP = 3; else if(parc.includes('4x')) nP = 4; else if(parc.includes('6x')) nP = 6; }
-            const vP = totalCustoGlobalNF / nP; const stsPgto = (fp.includes('Boleto') || fp.includes('Pendente') || fp.includes('Parcelado') || fp.includes('Crédito') || fp.includes('Prazo')) ? 'pendente' : 'pago';
-            for(let i=0; i<nP; i++) { 
-                let dV = new Date(dtBase); if(nP>1 || stsPgto==='pendente') dV.setDate(dV.getDate() + (i*30)); 
-                batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: 'despesa', desc: nP>1 ? `NF Compra: ${nf} (${fornecedor}) - Parc ${i+1}/${nP}` : `NF Compra: ${nf} (${fornecedor})`, valor: vP, parcelaAtual: i+1, totalParcelas: nP, metodo: fp, vencimento: dV.toISOString().split('T')[0], status: stsPgto }); 
-            }
-        }
-        app.registrarAuditoriaGlobal("Estoque e DRE", `Deu entrada em nova nota fiscal de ${fornecedor}, total R$ ${totalCustoGlobalNF.toFixed(2)}`);
-    }
-
-    await batch.commit(); app.showToast("Estoque Atualizado e Compra Lançada!", "success"); e.target.reset(); 
-    const mod = document.getElementById('modalNF'); if(mod) bootstrap.Modal.getInstance(mod).hide();
-};
-
-app.apagarProduto = async function(id) {
-    if(app.t_role !== 'admin') { app.showToast("Apenas a Administração Master pode excluir produtos.", "error"); return; }
-    if(confirm("Excluir produto permanentemente da base?")) { 
-        await app.db.collection('estoque').doc(id).delete(); 
-        app.registrarAuditoriaGlobal("Estoque", `Deletou um produto do estoque (ID: ${id}).`);
-        app.showToast("Produto Excluído.", "success"); 
-    }
-};
-
-// =====================================================================
-// 6. MOTOR KANBAN E GESTÃO DE O.S. (ATUALIZADO COM ATRIBUIÇÃO DE BOX E MÚLTIPLOS MECÂNICOS)
-// =====================================================================
-app.iniciarEscutaOS = function() {
-    app.db.collection('ordens_servico').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoOSCompleto = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        if(app.t_role === 'equipe') {
-            let minhaCom = 0; 
-            app.bancoOSCompleto.filter(o => o.status === 'entregue' && o.comissoesDetalhadas && Array.isArray(o.comissoesDetalhadas)).forEach(o => {
-                const minhaParte = o.comissoesDetalhadas.find(c => c.nome === app.user_nome);
-                if(minhaParte) minhaCom += minhaParte.valor;
-            });
-            // Subtrai os vales do mecânico logado
-            let meusVales = 0;
-            if(app.bancoVales) { app.bancoVales.filter(v => v.nomeFuncionario === app.user_nome).forEach(v => meusVales += v.valor); }
-            
-            const divKpi = document.getElementById('kpiMinhaComissao'); 
-            if(divKpi) divKpi.innerText = `R$ ${(minhaCom - meusVales).toFixed(2).replace('.',',')}`;
-        }
-        app.renderizarKanban(); app.renderizarTabelaArquivo();
-        if(app.t_role === 'admin' || app.t_role === 'gerente') app.renderizarEquipeRH();
-    });
-};
-
-app.filtrarGlobal = function() { app.renderizarKanban(); app.renderizarTabelaArquivo(); };
-
-app.renderizarKanban = function() {
-    const busca = document.getElementById('buscaGeral'); const t = busca ? busca.value.toLowerCase().trim() : '';
-    let ativos = app.bancoOSCompleto.filter(os => os.status !== 'entregue');
-    if(t) ativos = ativos.filter(os => (os.placa&&os.placa.toLowerCase().includes(t)) || (os.cliente&&os.cliente.toLowerCase().includes(t)) || (os.veiculo&&os.veiculo.toLowerCase().includes(t)));
-
-    const cols = { patio: '', orcamento: '', aprovacao: '', box: '', pronto: '' };
-    let counts = { patio: 0, orcamento: 0, aprovacao: 0, box: 0, pronto: 0 };
-    const ordem = ['patio', 'orcamento', 'aprovacao', 'box', 'pronto'];
-
-    ativos.forEach(os => {
-        const s = os.status || 'patio'; counts[s]++;
-        let cor = s === 'pronto' ? 'border-success' : s === 'aprovacao' ? 'border-warning' : s === 'box' ? 'border-info' : s === 'orcamento' ? 'border-primary' : 'border-secondary';
-        const idx = ordem.indexOf(s); const nextS = idx < ordem.length-1 ? ordem[idx+1] : null; const prevS = idx > 0 ? ordem[idx-1] : null;
-        
-        let btnBack = prevS ? `<button class="btn btn-sm btn-dark p-1 px-2 border-secondary shadow-sm me-1" onclick="event.stopPropagation(); app.mudarStatusRapido('${os.id}', '${prevS}')" title="Voltar Fase"><i class="bi bi-arrow-left-circle text-white-50"></i></button>` : '';
-        let btnFwd = s === 'pronto' ? `<button class="btn btn-sm btn-success p-1 px-3 shadow fw-bold gestao-only" onclick="event.stopPropagation(); app.abrirFaturamentoDireto('${os.id}')"><i class="bi bi-cash-coin me-1"></i> FATURAR VEÍCULO</button>` : `<button class="btn btn-sm btn-dark p-1 px-2 border-secondary shadow-sm" onclick="event.stopPropagation(); app.mudarStatusRapido('${os.id}', '${nextS}')" title="Avançar Fase"><i class="bi bi-arrow-right-circle text-info"></i></button>`;
-
-        let tagsBox = '';
-        if (s === 'box' || s === 'pronto') {
-            const m = os.mecanicoAtribuido ? os.mecanicoAtribuido : 'Equipe Não Definida';
-            const b = os.boxAtribuido ? os.boxAtribuido : 'Box ?';
-            tagsBox = `<div class="mt-2 d-flex gap-1 flex-wrap"><span class="badge bg-dark border border-info text-info"><i class="bi bi-people"></i> ${m}</span><span class="badge bg-dark border border-warning text-warning"><i class="bi bi-geo-alt"></i> ${b}</span></div>`;
-        }
-
-        cols[s] += `<div class="os-card border-start border-4 ${cor}" onclick="app.abrirModalOS('edit', '${os.id}')"><div class="fast-actions">${btnBack}${btnFwd}</div><div class="d-flex justify-content-between mb-2"><span class="badge bg-dark border border-secondary text-white py-2 px-3 fw-bold tracking-wide">${os.placa}</span></div><h6 class="text-white fw-bold mb-1 w-75 text-truncate">${os.veiculo}</h6><small class="text-white-50"><i class="bi bi-person-fill"></i> ${os.cliente}</small>${tagsBox}</div>`;
-    });
-    ordem.forEach(id => { const col = document.getElementById('col_'+id); const cnt = document.getElementById('count_'+id); if(col) col.innerHTML = cols[id]; if(cnt) cnt.innerText = counts[id]; });
-};
-
-app.mudarStatusRapido = async function(id, novoStatus) {
-    if (novoStatus === 'box') {
-        app.iniciarAtribuicaoBox(id);
-        return; 
-    }
-    
-    const osRef = app.db.collection('ordens_servico').doc(id); const doc = await osRef.get();
-    let h = doc.data().historico || [];
-    h.push({ data: new Date().toISOString(), usuario: app.user_nome, acao: `Moveu a O.S. para: ${novoStatus.toUpperCase()}` });
-    await osRef.update({ status: novoStatus, historico: h, ultimaAtualizacao: new Date().toISOString() });
-    
-    if (novoStatus === 'pronto') {
-        app.abrirModalNotificacaoWhatsApp(id, 'pronto');
-    }
-};
-
-// =====================================================================
-// FLUXOS DE ATRIBUIÇÃO DE MÚLTIPLOS MECÂNICOS
-// =====================================================================
-app.iniciarAtribuicaoBox = function(id) {
-    document.getElementById('atrib_os_id').value = id;
-    
-    const listContainer = document.getElementById('atrib_mecanicos_list');
-    if (listContainer) {
-        let html = '';
-        app.bancoEquipe.filter(f => f.role === 'equipe').forEach((f, idx) => {
-            html += `<div class="form-check mb-2">
-                        <input class="form-check-input border-secondary" type="checkbox" value="${f.nome}" id="mec_chk_${idx}" name="mec_check">
-                        <label class="form-check-label text-white" for="mec_chk_${idx}">${f.nome}</label>
-                     </div>`;
-        });
-        listContainer.innerHTML = html || '<div class="text-white-50 small">Nenhum mecânico de produção encontrado. Cadastre no RH.</div>';
-    }
-    
-    new bootstrap.Modal(document.getElementById('modalAtribuicaoBox')).show();
-};
-
-app.confirmarAtribuicaoBox = async function() {
-    const id = document.getElementById('atrib_os_id').value;
-    const box = document.getElementById('atrib_box').value;
-    
-    const checkboxes = document.querySelectorAll('input[name="mec_check"]:checked');
-    if (checkboxes.length === 0) { app.showToast("É obrigatório definir ao menos 1 mecânico para o Box.", "warning"); return; }
-    
-    let mecanicosArray = [];
-    checkboxes.forEach(c => mecanicosArray.push(c.value));
-    const mecanicosStr = mecanicosArray.join(' + ');
-    
-    const osRef = app.db.collection('ordens_servico').doc(id);
-    const doc = await osRef.get();
-    let h = doc.data().historico || [];
-    
-    h.push({ data: new Date().toISOString(), usuario: app.user_nome, acao: `Serviço Aprovado. Direcionado para o [${box}] sob responsabilidade da equipe: [${mecanicosStr}]. Status: BOX` });
-    
-    await osRef.update({ 
-        status: 'box', 
-        mecanicoAtribuido: mecanicosStr, 
-        boxAtribuido: box, 
-        historico: h, 
-        ultimaAtualizacao: new Date().toISOString() 
-    });
-    
-    app.showToast("Veículo encaminhado para execução com equipe atribuída!", "success");
-    bootstrap.Modal.getInstance(document.getElementById('modalAtribuicaoBox')).hide();
-};
-
-app.abrirModalNotificacaoWhatsApp = function(id, tipo) {
-    document.getElementById('whats_os_id').value = id;
-    document.getElementById('whats_tipo_msg').value = tipo;
-    
-    const os = app.bancoOSCompleto.find(x => x.id === id);
-    if(os) {
-        if(tipo === 'pronto') {
-            document.getElementById('whatsTituloModal').innerText = 'Veículo Pronto!';
-            document.getElementById('whatsTextoModal').innerText = `Deseja enviar uma mensagem automática para ${os.cliente} informando que o ${os.veiculo} está pronto para ser retirado?`;
-        }
-        new bootstrap.Modal(document.getElementById('modalNotificaWhatsApp')).show();
-    }
-};
-
-app.dispararWhatsAppAtivo = function() {
-    const id = document.getElementById('whats_os_id').value;
-    const tipo = document.getElementById('whats_tipo_msg').value;
-    const os = app.bancoOSCompleto.find(x => x.id === id);
-    
-    if (os && os.celular) {
-        let texto = '';
-        if (tipo === 'pronto') {
-            texto = `Olá ${os.cliente}, ótimas notícias da *${app.t_nome}*! 🚀\nO serviço no seu *${os.veiculo}* foi concluído com sucesso e ele já se encontra no pátio, finalizado e revisado.\nPor favor, confirme por aqui o melhor horário para agendarmos a sua retirada. Muito obrigado pela confiança!`;
-        }
-        window.open(`https://wa.me/55${os.celular.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`, '_blank');
-        
-        const h = os.historico || [];
-        h.push({ data: new Date().toISOString(), usuario: app.user_nome, acao: `Disparou aviso de CONCLUSÃO via WhatsApp para o cliente.` });
-        app.db.collection('ordens_servico').doc(id).update({ historico: h });
-        
-    } else {
-        app.showToast("Este cliente não tem um celular válido cadastrado.", "error");
-    }
-    bootstrap.Modal.getInstance(document.getElementById('modalNotificaWhatsApp')).hide();
-};
-
 // =====================================================================
 // 7. ABERTURA E EDIÇÃO DO PRONTUÁRIO O.S. 
 // =====================================================================
@@ -872,14 +165,11 @@ app.processarFaturamentoCompleto = async function() {
         mecanicosArray.forEach(nomeMec => {
             let func = app.bancoEquipe.find(f => f.nome === nomeMec);
             if (func) {
-                // Cada um ganha a sua base de % calculada sobre o montante dividido pela quantidade de envolvidos
                 let baseMO = (app.osParaFaturar.maoObraTotal || 0) / mecanicosArray.length;
                 let basePc = (app.osParaFaturar.pecasTotal || 0) / mecanicosArray.length;
-                
                 let valMO = baseMO * (parseFloat(func.comissao || 0) / 100);
                 let valPc = basePc * (parseFloat(func.comissao_pecas || 0) / 100);
                 let totalMec = valMO + valPc;
-                
                 comissoesDetalhadas.push({ nome: func.nome, valor: totalMec });
                 somaComissaoGlobal += totalMec;
             }
@@ -907,7 +197,7 @@ app.processarFaturamentoCompleto = async function() {
 };
 
 // =====================================================================
-// 9. DRE, FLUXO DE CAIXA E HISTÓRICO PERMANENTE
+// 9. DRE, FLUXO DE CAIXA COM VÍNCULO RH (PRÓ-LABORE/VALE)
 // =====================================================================
 app.abrirModalFinanceiro = function(mode='nova', tipo='', id='') {
     const frm = document.getElementById('formFinanceiro'); if(frm) frm.reset();
@@ -955,6 +245,9 @@ app.salvarLancamentoFinanceiro = async function(e) {
     const dataInicial = document.getElementById('fin_data') ? new Date(document.getElementById('fin_data').value) : new Date();
     const fp = document.getElementById('fin_metodo') ? document.getElementById('fin_metodo').value : ''; 
     
+    const vinculoField = document.getElementById('fin_vinculo_rh');
+    const vinculoData = (vinculoField && vinculoField.value) ? vinculoField.value.split('|') : null;
+
     if(id) {
         const m = prompt("ATENÇÃO: Modificando DRE. Digite a JUSTIFICATIVA (Auditoria Obrigatória):");
         if(!m || m.trim() === '') { app.showToast("Operação Abortada. A justificativa de caixa é obrigatória.", "error"); return; }
@@ -973,8 +266,15 @@ app.salvarLancamentoFinanceiro = async function(e) {
 
         for(let i=0; i<nP; i++) {
             let v = new Date(dataInicial); if(nP>1 || stsPgto==='pendente') v.setMonth(v.getMonth() + i);
-            batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: tipo, desc: nP>1 ? `${desc} - Parc ${i+1}/${nP}`: desc, valor: vP, parcelaAtual: i+1, totalParcelas: nP, metodo: fp, vencimento: v.toISOString().split('T')[0], status: stsPgto });
+            let fDoc = { tenantId: app.t_id, tipo: tipo, desc: nP>1 ? `${desc} - Parc ${i+1}/${nP}`: desc, valor: vP, parcelaAtual: i+1, totalParcelas: nP, metodo: fp, vencimento: v.toISOString().split('T')[0], status: stsPgto };
+            if (vinculoData) { fDoc.vinculoRhId = vinculoData[0]; fDoc.vinculoRhNome = vinculoData[1]; }
+            batch.set(app.db.collection('financeiro').doc(), fDoc);
         }
+        
+        if (tipo === 'despesa' && vinculoData) {
+            batch.set(app.db.collection('vales_rh').doc(), { tenantId: app.t_id, idFuncionario: vinculoData[0], nomeFuncionario: vinculoData[1], valor: valorTotal, motivo: desc, dataRealizacao: new Date().toISOString(), responsavel: app.user_nome });
+        }
+        
         await batch.commit(); 
         app.showToast(`Lançamento processado no DRE.`, "success");
         app.registrarAuditoriaGlobal("Financeiro (DRE)", `Inseriu novo lançamento: ${desc} no valor de R$ ${valorTotal.toFixed(2)}`);
@@ -1020,9 +320,10 @@ app.renderizarFinanceiroGeral = function() {
         
         const cor = isR ? 'text-success' : 'text-danger';
         const st = f.status === 'pago' ? '<span class="badge bg-success px-2 py-1"><i class="bi bi-check2-all"></i> Quitado</span>' : '<span class="badge bg-warning text-dark px-2 py-1"><i class="bi bi-hourglass-split"></i> A Vencer / Pendente</span>';
+        const rhBadge = f.vinculoRhNome ? `<br><span class="badge bg-warning text-dark mt-1"><i class="bi bi-person-badge"></i> ${f.vinculoRhNome}</span>` : '';
         const btnEdit = `<button class="btn btn-sm btn-outline-info shadow-sm me-1" onclick="app.abrirModalFinanceiro('edit', '${f.tipo}', '${f.id}')"><i class="bi bi-pencil"></i> Editar</button>`;
         
-        const html = `<tr><td class="text-white-50 fw-bold"><i class="bi bi-calendar-event me-2"></i> ${f.vencimento ? new Date(f.vencimento).toLocaleDateString('pt-BR') : ''}</td><td class="text-white fw-bold">${f.desc}</td><td><span class="badge bg-dark border border-secondary px-3 py-1 text-white-50">${f.parcelaAtual}/${f.totalParcelas}</span></td><td class="text-white-50 small">${f.metodo || 'Dinheiro'}</td><td class="${cor} fw-bold fs-6">R$ ${f.valor.toFixed(2).replace('.',',')}</td><td>${st}</td><td class="gestao-only text-end">${btnEdit} <button class="btn btn-sm btn-link text-danger admin-only" onclick="app.db.collection('financeiro').doc('${f.id}').delete()"><i class="bi bi-trash"></i></button></td></tr>`;
+        const html = `<tr><td class="text-white-50 fw-bold"><i class="bi bi-calendar-event me-2"></i> ${f.vencimento ? new Date(f.vencimento).toLocaleDateString('pt-BR') : ''}</td><td class="text-white fw-bold">${f.desc}${rhBadge}</td><td><span class="badge bg-dark border border-secondary px-3 py-1 text-white-50">${f.parcelaAtual}/${f.totalParcelas}</span></td><td class="text-white-50 small">${f.metodo || 'Dinheiro'}</td><td class="${cor} fw-bold fs-6">R$ ${f.valor.toFixed(2).replace('.',',')}</td><td>${st}</td><td class="gestao-only text-end">${btnEdit} <button class="btn btn-sm btn-link text-danger admin-only" onclick="app.db.collection('financeiro').doc('${f.id}').delete()"><i class="bi bi-trash"></i></button></td></tr>`;
         if(isR) hReceber += html; else hPagar += html;
     });
 
@@ -1072,6 +373,7 @@ app.exportarRelatorioFinanceiro = function() {
 app.iniciarEscutaEquipe = function() {
     app.db.collection('funcionarios').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         app.bancoEquipe = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        app.popularSelectVinculoRH();
         app.renderizarEquipeRH();
     });
 };
@@ -1143,11 +445,8 @@ app.confirmarValeRH = async function(e) {
     const batch = app.db.batch();
     const dataH = new Date().toISOString();
     
-    // 1. Registra o vale no RH
     batch.set(app.db.collection('vales_rh').doc(), { tenantId: app.t_id, idFuncionario: idFunc, nomeFuncionario: nomeFunc, valor: valor, motivo: motivo, dataRealizacao: dataH, responsavel: app.user_nome });
-    
-    // 2. Lança como Despesa Imediata no Financeiro (Caixa da Empresa pagando o vale)
-    batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: 'despesa', desc: `[VALE/RH] ${nomeFunc} - ${motivo}`, valor: valor, parcelaAtual: 1, totalParcelas: 1, metodo: 'Dinheiro', vencimento: dataH.split('T')[0], status: 'pago' });
+    batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: 'despesa', desc: `[VALE/RH] ${nomeFunc} - ${motivo}`, valor: valor, parcelaAtual: 1, totalParcelas: 1, metodo: 'Dinheiro', vencimento: dataH.split('T')[0], status: 'pago', vinculoRhId: idFunc, vinculoRhNome: nomeFunc });
     
     await batch.commit();
     app.registrarAuditoriaGlobal("RH & Financeiro", `Lançou vale de R$ ${valor.toFixed(2)} para ${nomeFunc}.`);
@@ -1342,7 +641,7 @@ app.exportarPDFMenechelli = async function() {
 };
 
 // =====================================================================
-// 12. CÉREBRO DA I.A. GEMINI 2.5 FLASH (COM COMPRESSÃO ANTI-OVERFLOW)
+// 12. CÉREBRO DA I.A. GEMINI 1.5 FLASH (COM COMPRESSÃO ANTI-OVERFLOW)
 // =====================================================================
 app.minhaGeminiKey = null;
 app.iaTrabalhando = false;
