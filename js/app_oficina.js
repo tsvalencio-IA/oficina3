@@ -749,7 +749,7 @@ app.renderizarFinanceiroGeral = function() {
 
 app.iniciarEscutaEquipe = function() {
     app.db.collection('funcionarios').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        const tbody = document.getElementById('tabelaEquipe');
+        const tbody = document.getElementById('tabelaEquipeCorpo');
         if(!tbody) return;
         if(snap.empty) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-white-50 py-5 fs-5">Sem equipe.</td></tr>'; return; }
         tbody.innerHTML = snap.docs.map(doc => {
@@ -954,4 +954,10 @@ app.jarvisAnalisarRevisoes = async function() {
     const dadosParaIA = historicoMorto.map(o => `Data Baixa: ${new Date(o.ultimaAtualizacao).toLocaleDateString('pt-BR')} | Cliente: ${o.cliente} | Carro: ${o.veiculo} | Placa: ${o.placa}`).join('\n');
     const promptRadar = `Você é o Gestor de Remarketing Automotivo da oficina ${app.t_nome}. Leia o banco de dados abaixo de ordens de serviço finalizadas da nossa oficina. Encontre os clientes que fizeram serviço há mais tempo para oferecermos revisões preventivas (ex: troca de óleo). Retorne uma lista formatada em HTML (com <ul> e <li>) explicando por que ligar para cada um. Seja breve e comercial. BANCO DE DADOS:\n${dadosParaIA}`;
     const respostaRadar = await app.chamarGemini(promptRadar); div.innerHTML = respostaRadar;
+};
+// Função para abrir o modal de equipe
+app.abrirModalEquipe = function() {
+    const modal = new bootstrap.Modal(document.getElementById('modalEquipe'));
+    document.querySelector('#modalEquipe form').reset();
+    modal.show();
 };

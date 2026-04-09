@@ -188,7 +188,21 @@
         </div>
     </section>
 
-    <!-- 8. ARQUIVO MORTO -->
+    <!-- 8. EQUIPE -->
+    <section id="tela_equipe" class="modulo-tela hidden admin-only">
+        <div class="d-flex justify-content-between mb-3">
+            <h4 class="text-white fw-bold">Gestão de Equipe</h4>
+            <button class="btn btn-success" onclick="app.abrirModalEquipe()"><i class="bi bi-person-plus-fill"></i> Novo Acesso</button>
+        </div>
+        <div class="card bg-dark border-secondary p-3">
+            <table class="table table-dark table-hover align-middle">
+                <thead><tr><th>Nome</th><th>Cargo</th><th>Comissão</th><th>Usuário</th><th>Ações</th></tr></thead>
+                <tbody id="tabelaEquipeCorpo"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- 9. ARQUIVO MORTO -->
     <section id="tela_arquivo" class="modulo-tela hidden">
         <div class="d-flex justify-content-between mb-3">
             <h4 class="text-white fw-bold">Histórico de Entregas</h4>
