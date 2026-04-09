@@ -151,9 +151,6 @@
         // Limpa resíduos antigos de cache que causam bugs ao recarregar a tela
         window.onload = function() {
             sessionStorage.clear();
-            // NOTA: localStorage.thiaguinho_master NÃO é limpo aqui.
-            // Ele só é removido quando o superadmin clica em "Trancar Agência" (sair()).
-            // Isso garante que a sessão do superadmin persista entre abas e reloads.
         };
 
         function showToast(msg, isError = true) {
@@ -197,8 +194,7 @@
                 // =========================================================
                 if (usr === 'thiaguinho' && pwd === 'master2026') {
                     sessionStorage.clear();
-                    localStorage.setItem('thiaguinho_master', 'true'); // localStorage sobrevive a novas abas e reloads
-                    sessionStorage.setItem('thiaguinho_master', 'true'); // sessionStorage como backup
+                    sessionStorage.setItem('thiaguinho_master', 'true');
                     sessionStorage.setItem('t_role', 'superadmin');
                     window.location.href = 'superadmin.html';
                     return; // Retorno crucial para não rodar o resto
@@ -208,7 +204,6 @@
                 if (!snapS.empty) {
                     if (snapS.docs[0].data().senha === pwd) {
                         sessionStorage.clear();
-                        localStorage.setItem('thiaguinho_master', 'true'); // localStorage sobrevive a novas abas e reloads
                         sessionStorage.setItem('thiaguinho_master', 'true');
                         sessionStorage.setItem('t_role', 'superadmin');
                         window.location.href = 'superadmin.html';
@@ -218,9 +213,9 @@
 
                 // =========================================================
                 // CAMADA 2: TENTA ENTRAR COMO ADMIN DO TENANT (DONO DA OFICINA)
-                // Usando a coleção correta: "tenants" (salvo pelo superadmin.html)
+                // Usando a coleção correta: "oficinas"
                 // =========================================================
-                const tenantSnap = await db.collection('tenants').where('usuario', '==', usr).get();
+                const tenantSnap = await db.collection('oficinas').where('usuario', '==', usr).get();
                 if (!tenantSnap.empty) {
                     const doc = tenantSnap.docs[0];
                     const dados = doc.data();
@@ -265,7 +260,7 @@
                         }
                         else {
                             // Validar se a Oficina mãe está ativa
-                            const empresaMae = await db.collection('tenants').doc(dadosF.tenantId).get();
+                            const empresaMae = await db.collection('oficinas').doc(dadosF.tenantId).get();
                             if(!empresaMae.exists || empresaMae.data().status === 'Bloqueado') {
                                 showToast('A matriz da sua empresa está inativa. Acesso negado.');
                             } else {

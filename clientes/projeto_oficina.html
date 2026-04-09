@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal do Cliente - thIAguinho</title>
+    <title>Garagem Online - Portal do Cliente</title>
     
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -12,93 +12,145 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     
     <style>
-        body { background-color: #0f172a; color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
-        .card { background-color: #1e293b; border: 1px solid #334155; border-radius: 16px; }
-        .btn-approve { background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: bold; }
-        .btn-chat { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border: none; font-weight: bold; }
-        .status-badge { padding: 8px 16px; border-radius: 20px; font-weight: bold; text-transform: uppercase; font-size: 0.8rem; }
-        .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-        .photo-item { border-radius: 8px; overflow: hidden; border: 1px solid #334155; cursor: pointer; }
-        .photo-item img { width: 100%; height: 120px; object-fit: cover; }
+        body { background-color: #0f172a; color: #f8f9fa; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        
+        /* Tela de Login */
+        .login-wrapper { height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { width: 100%; max-width: 420px; background: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        
+        /* Header e Navegação */
+        .portal-header { background: #000; border-bottom: 2px solid #0dcaf0; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 1030; }
+        .nav-pills .nav-link { color: #adb5bd; border-radius: 30px; font-weight: bold; padding: 10px 20px; margin: 0 5px; border: 1px solid transparent; transition: 0.2s; }
+        .nav-pills .nav-link:hover { color: #fff; }
+        .nav-pills .nav-link.active { background-color: #0dcaf0; color: #000; border-color: #0dcaf0; }
+        
+        /* Cards de O.S. e Timeline */
+        .os-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px; transition: 0.2s; }
+        .os-card:hover { border-color: #0dcaf0; box-shadow: 0 4px 15px rgba(13, 202, 240, 0.1); }
+        .timeline-cliente li { padding-left: 15px; }
+        
+        /* Chat Estilo WhatsApp */
+        .chat-container { background: #0b141a; border: 1px solid #334155; border-radius: 16px; height: calc(100vh - 200px); display: flex; flex-direction: column; overflow: hidden; }
+        .chat-messages { flex-grow: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; background-image: url('https://w0.peakpx.com/wallpaper/508/606/HD-wallpaper-whatsapp-dark-background-texture.jpg'); background-blend-mode: multiply; background-color: rgba(11,20,26,0.85); }
+        .message { margin-bottom: 12px; max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 0.95rem; word-wrap: break-word; position: relative; }
+        .message.cliente { background: #005c4b; color: #e9edef; align-self: flex-end; border-bottom-right-radius: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .message.oficina { background: #202c33; color: #e9edef; align-self: flex-start; border-bottom-left-radius: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .msg-time { font-size: 0.65rem; opacity: 0.7; float: right; margin-top: 5px; margin-left: 10px; }
+        
+        .chat-input-area { background: #202c33; padding: 10px 15px; display: flex; align-items: center; gap: 10px; }
+        .chat-input-area input { background: #2a3942 !important; border: none; color: #fff !important; border-radius: 20px; padding: 12px 20px; box-shadow: none !important; }
+        .btn-mic { background: #00a884; color: #fff; border-radius: 50%; width: 45px; height: 45px; display: flex; align-items: center; justify-content: center; border: none; transition: 0.2s; }
+        .btn-mic.recording { background: #ef4444; animation: pulse 1s infinite; }
+        
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
 
-    <div class="container py-5">
-        <div class="text-center mb-5">
-            <i class="bi bi-hexagon-fill text-info display-4"></i>
-            <h2 class="fw-bold mt-3">Portal de Aprovação</h2>
-            <p class="text-white-50">Acompanhe o status do seu serviço em tempo real</p>
+    <div id="loginScreen" class="login-wrapper">
+        <div class="login-card text-center">
+            <i class="bi bi-car-front-fill display-1 text-info mb-3"></i>
+            <h3 class="fw-bold mb-4">Garagem Online</h3>
+            <p class="text-white-50 mb-4">Acesse com o Usuário e Senha (PIN) fornecidos pela sua oficina.</p>
+            <form onsubmit="realizarLogin(event)">
+                <input type="text" id="loginUser" class="form-control bg-dark text-white border-secondary mb-3 py-3" placeholder="Seu Login" required>
+                <input type="password" id="loginPass" class="form-control bg-dark text-white border-secondary mb-4 py-3" placeholder="Sua Senha" required>
+                <button type="submit" id="btnAcesso" class="btn btn-info w-100 fw-bold py-3 text-dark fs-5">ENTRAR NA GARAGEM</button>
+            </form>
+            <div id="loginError" class="text-danger mt-3 fw-bold" style="display:none;"><i class="bi bi-exclamation-triangle-fill"></i> Credenciais incorretas.</div>
         </div>
+    </div>
 
-        <div id="loading" class="text-center py-5">
-            <div class="spinner-border text-info" role="status"></div>
-            <p class="mt-3">Carregando detalhes do seu projeto...</p>
-        </div>
+    <div id="dashboardScreen" style="display: none; flex-grow: 1; flex-direction: column;">
+        <header class="portal-header shadow-sm">
+            <h4 class="mb-0 fw-bold text-info"><i class="bi bi-shield-check me-2"></i> Portal Seguro</h4>
+            <div class="d-flex align-items-center">
+                <span class="me-3 d-none d-sm-inline fw-bold">Olá, <span id="lblNomeCliente" class="text-white">Cliente</span>!</span>
+                <button class="btn btn-sm btn-outline-danger fw-bold rounded-pill px-3" onclick="sair()"><i class="bi bi-power"></i> Sair</button>
+            </div>
+        </header>
 
-        <div id="content" style="display: none;">
-            <div class="row g-4">
-                <div class="col-lg-8">
-                    <div class="card p-4 mb-4 shadow-sm">
-                        <div class="d-flex justify-content-between align-items-start mb-4">
-                            <div>
-                                <h4 class="fw-bold mb-1" id="os_veiculo">Veículo / Referência</h4>
-                                <span class="text-white-50" id="os_id">ID: #0000</span>
-                            </div>
-                            <span id="os_status_badge" class="status-badge bg-warning text-dark">Aguardando</span>
+        <div class="container py-4 flex-grow-1 d-flex flex-column">
+            
+            <ul class="nav nav-pills justify-content-center mb-4" id="clienteTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active shadow-sm" id="ativos-tab" data-bs-toggle="pill" data-bs-target="#tabAtivos" type="button" role="tab"><i class="bi bi-tools me-1"></i> Carros na Oficina</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link shadow-sm" id="historico-tab" data-bs-toggle="pill" data-bs-target="#tabHistorico" type="button" role="tab"><i class="bi bi-clock-history me-1"></i> Meu Histórico</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link shadow-sm" id="chat-tab" data-bs-toggle="pill" data-bs-target="#tabChat" type="button" role="tab"><i class="bi bi-chat-dots-fill me-1"></i> Atendimento & Agendamento</button>
+                </li>
+            </ul>
+
+            <div class="tab-content flex-grow-1 d-flex flex-column" id="clienteTabsContent">
+                
+                <div class="tab-pane fade show active h-100" id="tabAtivos" role="tabpanel">
+                    <div id="listaOSAtivas" class="row g-4">
+                        <div class="col-12 text-center py-5 text-white-50"><div class="spinner-border text-info"></div><br>Buscando seus veículos...</div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade h-100" id="tabHistorico" role="tabpanel">
+                    <div class="row g-4 mb-4">
+                        <div class="col-6"><div class="card bg-black border-secondary p-3 text-center"><h6 class="text-white-50 small">Total Investido</h6><h4 class="text-success fw-bold mb-0" id="totalGasto">R$ 0,00</h4></div></div>
+                        <div class="col-6"><div class="card bg-black border-secondary p-3 text-center"><h6 class="text-white-50 small">Revisões Concluídas</h6><h4 class="text-info fw-bold mb-0" id="totalVeiculos">0</h4></div></div>
+                    </div>
+                    <div id="listaOSHistorico" class="row g-4"></div>
+                </div>
+
+                <div class="tab-pane fade h-100 d-flex flex-column" id="tabChat" role="tabpanel">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold text-white mb-0"><i class="bi bi-headset text-info me-2"></i> Fale com a Oficina</h5>
+                        <button class="btn btn-warning fw-bold text-dark rounded-pill shadow px-3" data-bs-toggle="modal" data-bs-target="#modalAgendamento"><i class="bi bi-calendar-plus-fill me-1"></i> Agendar Revisão</button>
+                    </div>
+                    
+                    <div class="chat-container shadow-lg flex-grow-1">
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="text-center text-white-50 my-auto"><div class="spinner-border spinner-border-sm text-info mb-2"></div><br>Sincronizando conversas...</div>
                         </div>
                         
-                        <h6 class="text-info fw-bold text-uppercase small mb-3">Laudo Técnico</h6>
-                        <p id="os_laudo" class="mb-4">Nenhum laudo disponível no momento.</p>
-                        
-                        <h6 class="text-info fw-bold text-uppercase small mb-3">Evidências Fotográficas</h6>
-                        <div id="os_fotos" class="photo-grid mb-4"></div>
-                    </div>
-
-                    <div class="card p-4 shadow-sm">
-                        <h6 class="text-info fw-bold text-uppercase small mb-3">Itens e Serviços</h6>
-                        <div class="table-responsive">
-                            <table class="table table-dark table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Descrição</th>
-                                        <th class="text-center">Qtd</th>
-                                        <th class="text-end">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="os_itens"></tbody>
-                                <tfoot>
-                                    <tr>
-                                        <th colspan="2" class="text-end">Valor Total:</th>
-                                        <th class="text-end text-success fs-5" id="os_total">R$ 0,00</th>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                        <div class="chat-input-area">
+                            <button class="btn btn-link text-white-50 fs-4 p-0" onclick="document.getElementById('chatFile').click()"><i class="bi bi-paperclip"></i></button>
+                            <input type="file" id="chatFile" accept="image/*,video/*,application/pdf" class="d-none" onchange="enviarAnexo()">
+                            
+                            <input type="text" id="chatInput" class="form-control flex-grow-1" placeholder="Digite sua mensagem...">
+                            
+                            <button class="btn-mic" id="btnRecordAudio" onmousedown="iniciarGravacao()" onmouseup="pararGravacao()" ontouchstart="iniciarGravacao()" ontouchend="pararGravacao()"><i class="bi bi-mic-fill fs-5"></i></button>
+                            <button class="btn-mic bg-info text-dark d-none" id="btnSendText" onclick="enviarMensagemTexto()"><i class="bi bi-send-fill fs-5"></i></button>
                         </div>
                     </div>
                 </div>
 
-                <div class="col-lg-4">
-                    <div class="card p-4 mb-4 sticky-top" style="top: 20px;">
-                        <h5 class="fw-bold mb-4">Ações Disponíveis</h5>
-                        <button class="btn btn-approve w-100 py-3 mb-3 shadow" onclick="aprovarOrcamento()">
-                            <i class="bi bi-check-circle-fill me-2"></i> APROVAR ORÇAMENTO
-                        </button>
-                        <button class="btn btn-chat w-100 py-3 shadow" onclick="abrirChat()">
-                            <i class="bi bi-chat-dots-fill me-2"></i> FALAR COM CONSULTOR
-                        </button>
-                        <hr class="my-4 border-secondary">
-                        <div class="text-center">
-                            <small class="text-white-50">Dúvidas? Entre em contato pelo WhatsApp da empresa.</small>
-                        </div>
-                    </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalAgendamento" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark border-secondary">
+                <div class="modal-header bg-black">
+                    <h5 class="modal-title text-warning fw-bold"><i class="bi bi-calendar-event me-2"></i> Agendar Nova Revisão</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <label class="text-white-50 small mb-2 fw-bold">Para qual dia você deseja agendar?</label>
+                    <input type="date" id="dataAgendamento" class="form-control bg-black text-white border-secondary mb-3 py-3">
+                    
+                    <label class="text-white-50 small mb-2 fw-bold">Qual veículo e qual o serviço?</label>
+                    <textarea id="motivoAgendamento" class="form-control bg-black text-white border-secondary mb-4" rows="3" placeholder="Ex: VW Gol placa ABC1234, para trocar o óleo e checar freios."></textarea>
+                    
+                    <button class="btn btn-warning w-100 fw-bold py-3 text-dark" onclick="solicitarAgendamento()">ENVIAR SOLICITAÇÃO</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Configuração Firebase (Mesma do app_oficina.js)
+        // 1. CONFIGURAÇÃO FIREBASE E NUVEM
         const firebaseConfig = {
             apiKey: "AIzaSyBqIuCsHHuy_f-mBWV4JBkbyOorXpqQvqg",
             authDomain: "hub-thiaguinho.firebaseapp.com",
@@ -107,96 +159,260 @@
             messagingSenderId: "453508098543",
             appId: "1:453508098543:web:305f4d48edd9be40bd6e1a"
         };
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // Pegar ID da OS pela URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const osId = urlParams.get('id');
+        let meuClienteId = sessionStorage.getItem('cli_id');
+        let meuTenantId = sessionStorage.getItem('cli_tenant');
+        let meuNome = sessionStorage.getItem('cli_nome') || 'Cliente';
+        let cloudinaryPreset = 'evolution';
 
-        if (!osId) {
-            document.getElementById('loading').innerHTML = '<div class="alert alert-danger">Link inválido ou expirado.</div>';
-        } else {
-            carregarDadosOS();
+        if(meuClienteId && meuTenantId) {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('dashboardScreen').style.display = 'flex';
+            document.getElementById('lblNomeCliente').innerText = meuNome;
+            carregarDadosPortal();
         }
 
-        async function carregarDadosOS() {
+        // 2. SISTEMA DE LOGIN
+        async function realizarLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btnAcesso');
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>VERIFICANDO...'; btn.disabled = true;
+            document.getElementById('loginError').style.display = 'none';
+
+            const u = document.getElementById('loginUser').value.trim();
+            const p = document.getElementById('loginPass').value.trim();
+            
             try {
-                const doc = await db.collection('ordens_servico').doc(osId).get();
-                if (!doc.exists) {
-                    document.getElementById('loading').innerHTML = '<div class="alert alert-danger">Ordem de serviço não localizada.</div>';
-                    return;
+                const snap = await db.collection('clientes_base').where('usuario', '==', u).where('senha', '==', p).get();
+                if(snap.empty) {
+                    document.getElementById('loginError').style.display = 'block';
+                } else {
+                    const doc = snap.docs[0];
+                    sessionStorage.setItem('cli_id', doc.id);
+                    sessionStorage.setItem('cli_tenant', doc.data().tenantId);
+                    sessionStorage.setItem('cli_nome', doc.data().nome);
+                    location.reload(); 
                 }
+            } catch(e) { alert("Erro de comunicação com os servidores."); }
+            btn.innerHTML = 'ENTRAR NA GARAGEM'; btn.disabled = false;
+        }
 
-                const data = doc.data();
-                document.getElementById('os_veiculo').innerText = data.veiculo || 'Referência não informada';
-                document.getElementById('os_id').innerText = `ID: #${doc.id.slice(-6).toUpperCase()}`;
-                document.getElementById('os_laudo').innerText = data.diagnostico || 'Aguardando laudo técnico...';
+        function sair() { sessionStorage.clear(); location.reload(); }
+
+        // 3. CARREGAMENTO DE O.S. (COM HISTÓRICO DA OFICINA E FOTOS)
+        function carregarDadosPortal() {
+            db.collection('ordens_servico').where('clienteId', '==', meuClienteId).onSnapshot(snap => {
+                const divAtivos = document.getElementById('listaOSAtivas');
+                const divHist = document.getElementById('listaOSHistorico');
                 
-                // Status
-                const statusMap = {
-                    'patio': { text: 'Em Fila', class: 'bg-secondary' },
-                    'aprovacao': { text: 'Aguardando Você', class: 'bg-warning text-dark' },
-                    'box': { text: 'Em Execução', class: 'bg-info text-dark' },
-                    'pronto': { text: 'Pronto para Retirada', class: 'bg-success' },
-                    'entregue': { text: 'Finalizado', class: 'bg-dark border border-secondary' }
-                };
-                const s = statusMap[data.status] || { text: data.status, class: 'bg-primary' };
-                const badge = document.getElementById('os_status_badge');
-                badge.innerText = s.text;
-                badge.className = `status-badge ${s.class}`;
+                let totGasto = 0; let passagens = 0;
+                let htmlAtivos = ''; let htmlHist = '';
 
-                // Fotos
-                const fotosArea = document.getElementById('os_fotos');
-                if (data.fotos && data.fotos.length > 0) {
-                    fotosArea.innerHTML = data.fotos.map(f => `<div class="photo-item"><img src="${f}" onclick="window.open('${f}', '_blank')"></div>`).join('');
-                } else {
-                    fotosArea.innerHTML = '<p class="text-white-50 small">Nenhuma foto anexada.</p>';
+                if(snap.empty) { 
+                    divAtivos.innerHTML = '<div class="col-12"><div class="alert alert-dark text-center text-white-50">Nenhum veículo ativo na oficina no momento.</div></div>';
+                    divHist.innerHTML = '<div class="col-12"><div class="alert alert-dark text-center text-white-50">Seu histórico de manutenções está vazio.</div></div>';
+                    return; 
                 }
+                
+                const docs = snap.docs.map(d=>({id: d.id, ...d.data()})).sort((a,b) => new Date(b.ultimaAtualizacao) - new Date(a.ultimaAtualizacao));
+                
+                docs.forEach(os => {
+                    let isEntregue = os.status === 'entregue';
+                    if(isEntregue) { totGasto += (os.total||0); passagens++; }
+                    
+                    let bgBorder = isEntregue ? 'border-success' : (os.status === 'aprovacao' ? 'border-warning' : 'border-info');
+                    let badgeSts = isEntregue ? '<span class="badge bg-success"><i class="bi bi-check2-all"></i> Concluído e Faturado</span>' : (os.status === 'aprovacao' ? '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill"></i> Aguardando Sua Aprovação</span>' : '<span class="badge bg-info text-dark"><i class="bi bi-gear-fill"></i> Em Avaliação/Box</span>');
+                    
+                    const pecasHtml = os.pecas && os.pecas.length > 0 
+                        ? os.pecas.map(p => `<div class="d-flex justify-content-between small text-white border-bottom border-secondary py-2"><span>${p.qtd}x ${p.desc}</span><span class="text-success">R$ ${(p.qtd*p.venda).toFixed(2)}</span></div>`).join('') 
+                        : '<div class="small text-white-50 py-2">A oficina está formulando os itens do orçamento.</div>';
+                    
+                    // Injeção das Fotos da Oficina
+                    const fotosHtml = os.fotos && os.fotos.length > 0 ? 
+                        `<div class="mt-3"><h6 class="text-white-50 small fw-bold">Evidências Fotográficas:</h6><div class="d-flex gap-2 flex-wrap">` + 
+                        os.fotos.map(f => `<img src="${f}" class="img-thumbnail bg-dark border-secondary" style="width: 70px; height: 70px; object-fit: cover; cursor: pointer;" onclick="window.open('${f}')">`).join('') + 
+                        `</div></div>` : '';
 
-                // Itens
-                const itensArea = document.getElementById('os_itens');
-                let total = 0;
-                if (data.itens && data.itens.length > 0) {
-                    itensArea.innerHTML = data.itens.map(i => {
-                        const sub = parseFloat(i.subtotal || 0);
-                        total += sub;
-                        return `<tr><td>${i.descricao}</td><td class="text-center">${i.qtd}</td><td class="text-end">R$ ${sub.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>`;
-                    }).join('');
-                } else {
-                    itensArea.innerHTML = '<tr><td colspan="3" class="text-center text-white-50">Nenhum item listado.</td></tr>';
-                }
-                document.getElementById('os_total').innerText = `R$ ${total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+                    // Injeção da Linha do Tempo (Auditoria)
+                    const historicoHtml = os.historico && os.historico.length > 0 ? 
+                        `<div class="mt-4"><h6 class="text-white-50 small fw-bold mb-3"><i class="bi bi-clock-history me-1"></i> Linha do Tempo do Veículo:</h6>
+                         <ul class="timeline-cliente list-unstyled ms-2 border-start border-info">` +
+                        os.historico.slice().sort((a,b)=> new Date(b.data) - new Date(a.data)).map(h => 
+                            `<li class="mb-3 position-relative">
+                                <span class="position-absolute top-0 start-0 translate-middle bg-info rounded-circle" style="width: 12px; height: 12px; margin-left: -15px; margin-top: 6px;"></span>
+                                <span class="text-info fw-bold small d-block">${new Date(h.data).toLocaleString('pt-BR')}</span>
+                                <span class="text-white-50 small">${h.acao}</span>
+                             </li>`
+                        ).join('') + `</ul></div>` : '';
+                    
+                    const btnAprovarHtml = os.status === 'aprovacao' ? `<button class="btn btn-warning fw-bold w-100 mt-4 text-dark shadow-lg py-3" onclick="aprovarOrcamento('${os.id}', '${os.placa}')"><i class="bi bi-check-circle-fill me-1"></i> APROVAR ORÇAMENTO AGORA</button>` : '';
 
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('content').style.display = 'block';
+                    const cardHtml = `
+                    <div class="col-md-6">
+                        <div class="os-card border-start border-4 ${bgBorder} h-100 d-flex flex-column shadow-sm">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div><span class="fw-bold text-white fs-4">${os.placa}</span><br><small class="text-white-50">${os.veiculo}</small></div>
+                                <div class="text-end">${badgeSts}<br><small class="text-white-50" style="font-size: 0.7rem;">Última att: ${new Date(os.ultimaAtualizacao).toLocaleDateString('pt-BR')}</small></div>
+                            </div>
+                            <p class="text-white-50 small mb-1"><strong>Sua Queixa:</strong> ${os.relatoCliente || '-'}</p>
+                            <p class="text-info small mb-3"><strong>Diagnóstico da Oficina:</strong> ${os.diagnostico || 'Aguardando avaliação oficial.'}</p>
+                            
+                            <div class="bg-black p-3 rounded border border-secondary mb-3">
+                                <h6 class="text-white border-bottom border-secondary pb-2 mb-2 small fw-bold">Orçamento Detalhado</h6>
+                                ${pecasHtml}
+                                <div class="text-end mt-2 pt-2 fw-bold text-white">Total: <span class="text-success fs-5">R$ ${(os.total||0).toFixed(2)}</span></div>
+                            </div>
+                            
+                            ${fotosHtml}
+                            ${historicoHtml}
+                            
+                            <div class="mt-auto">${btnAprovarHtml}</div>
+                        </div>
+                    </div>`;
 
-            } catch (err) {
-                console.error(err);
-                document.getElementById('loading').innerHTML = '<div class="alert alert-danger">Erro ao conectar com o servidor.</div>';
-            }
+                    if(isEntregue) htmlHist += cardHtml; else htmlAtivos += cardHtml;
+                });
+                
+                divAtivos.innerHTML = htmlAtivos || '<div class="col-12"><div class="alert alert-dark text-center text-white-50">Nenhum veículo no pátio da oficina hoje.</div></div>';
+                divHist.innerHTML = htmlHist || '<div class="col-12"><div class="alert alert-dark text-center text-white-50">Sem manutenções passadas.</div></div>';
+                
+                document.getElementById('totalGasto').innerText = `R$ ${totGasto.toFixed(2).replace('.',',')}`;
+                document.getElementById('totalVeiculos').innerText = passagens;
+            });
+            
+            escutarChat();
         }
 
-        async function aprovarOrcamento() {
-            if (confirm('Deseja aprovar este orçamento e autorizar o início dos serviços?')) {
+        // 4. CHAT EM TEMPO REAL (BLINDADO CONTRA DATAS NULAS DO FIREBASE)
+        function escutarChat() {
+            db.collection('mensagens').where('clienteId', '==', meuClienteId).onSnapshot(snap => {
+                const cx = document.getElementById('chatMessages');
+                if(snap.empty) { cx.innerHTML = '<div class="text-center text-white-50 my-auto"><i class="bi bi-chat-dots display-1 opacity-25"></i><p class="mt-3">Envie uma mensagem, áudio ou foto para a oficina.</p></div>'; return; }
+                
+                // Ordenação protegida contra timestamps pendentes
+                const msgs = snap.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => {
+                    const timeA = a.timestamp && typeof a.timestamp.toMillis === 'function' ? a.timestamp.toMillis() : Date.now();
+                    const timeB = b.timestamp && typeof b.timestamp.toMillis === 'function' ? b.timestamp.toMillis() : Date.now();
+                    return timeA - timeB;
+                });
+                
+                cx.innerHTML = msgs.map(m => {
+                    if(m.sender === 'admin' && !m.lidaCliente) { db.collection('mensagens').doc(m.id).update({lidaCliente:true}); }
+                    
+                    let cnt = m.text;
+                    const isClient = m.sender === 'cliente';
+                    const cssSender = isClient ? 'cliente' : 'oficina';
+                    
+                    // Tratamento seguro de data para exibir na interface
+                    const dataHora = m.timestamp && typeof m.timestamp.toDate === 'function' 
+                        ? new Date(m.timestamp.toDate()).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}) 
+                        : 'agora';
+                    
+                    if(m.fileUrl) {
+                        if(m.fileType === 'video' || m.fileUrl.includes('.mp4') || m.fileUrl.includes('.webm')) cnt += `<br><video src="${m.fileUrl}" controls class="mw-100 rounded mt-2 shadow-sm" style="max-height: 200px;"></video>`;
+                        else if(m.fileType === 'audio' || m.fileUrl.includes('.mp3') || m.fileUrl.includes('.ogg')) cnt += `<br><audio src="${m.fileUrl}" controls class="mw-100 mt-2"></audio>`;
+                        else if(m.fileUrl.includes('.pdf')) cnt += `<br><a href="${m.fileUrl}" target="_blank" class="btn btn-sm btn-light mt-2 text-dark"><i class="bi bi-file-pdf text-danger"></i> Abrir Arquivo</a>`;
+                        else cnt += `<br><img src="${m.fileUrl}" class="mw-100 rounded mt-2 shadow-sm" style="cursor:pointer;" onclick="window.open('${m.fileUrl}')">`;
+                    }
+                    
+                    return `<div class="message ${cssSender}">${cnt}<span class="msg-time">${dataHora} ${isClient ? '<i class="bi bi-check2-all text-light"></i>' : ''}</span></div>`;
+                }).join('');
+                
+                cx.scrollTop = cx.scrollHeight; 
+            });
+        }
+
+        // 5. ENVIO DE MENSAGENS (TEXTO E ANEXO)
+        async function enviarMensagemTexto() {
+            const inp = document.getElementById('chatInput');
+            if(!inp.value.trim()) return;
+            await db.collection('mensagens').add({ tenantId: meuTenantId, clienteId: meuClienteId, sender: 'cliente', text: inp.value.trim(), lidaAdmin: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+            inp.value = ''; alternarBotoesChat();
+        }
+
+        document.getElementById("chatInput").addEventListener("keyup", function(event) {
+            alternarBotoesChat();
+            if (event.key === "Enter") enviarMensagemTexto();
+        });
+
+        function alternarBotoesChat() {
+            const val = document.getElementById("chatInput").value.trim();
+            if(val.length > 0) { document.getElementById('btnRecordAudio').classList.add('d-none'); document.getElementById('btnSendText').classList.remove('d-none'); } 
+            else { document.getElementById('btnRecordAudio').classList.remove('d-none'); document.getElementById('btnSendText').classList.add('d-none'); }
+        }
+
+        async function enviarAnexo() {
+            const inp = document.getElementById('chatFile'); if(!inp.files[0]) return;
+            alert("A enviar anexo para a oficina...");
+            try {
+                const fd = new FormData(); fd.append('file', inp.files[0]); fd.append('upload_preset', cloudinaryPreset);
+                const res = await fetch(`https://api.cloudinary.com/v1_1/dmuvm1o6m/auto/upload`, {method:'POST', body:fd});
+                const data = await res.json();
+                if(data.secure_url) {
+                    await db.collection('mensagens').add({ tenantId: meuTenantId, clienteId: meuClienteId, sender: 'cliente', text: "📎 Imagem / Arquivo:", fileUrl: data.secure_url, fileType: data.resource_type, lidaAdmin: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                    inp.value = ''; 
+                }
+            } catch(e) { alert("Falha ao processar o anexo."); }
+        }
+
+        // 6. MOTOR DE ÁUDIO NATIVO
+        let mediaRecorder; let audioChunks = [];
+        async function iniciarGravacao() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.start();
+                audioChunks = [];
+                mediaRecorder.addEventListener("dataavailable", event => { audioChunks.push(event.data); });
+                document.getElementById('btnRecordAudio').classList.add('recording');
+            } catch(e) { alert("Para enviar áudio, você precisa permitir o uso do microfone."); }
+        }
+
+        async function pararGravacao() {
+            if(!mediaRecorder || mediaRecorder.state === "inactive") return;
+            mediaRecorder.stop();
+            document.getElementById('btnRecordAudio').classList.remove('recording');
+            
+            mediaRecorder.addEventListener("stop", async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                if(audioBlob.size < 1000) return; 
+                
                 try {
-                    await db.collection('ordens_servico').doc(osId).update({
-                        status: 'box',
-                        historico: firebase.firestore.FieldValue.arrayUnion({
-                            data: new Date().toISOString(),
-                            msg: "Orçamento APROVADO pelo cliente via Portal Web."
-                        })
-                    });
-                    alert('Orçamento aprovado com sucesso! Nossa equipe já foi notificada.');
-                    location.reload();
-                } catch (err) {
-                    alert('Erro ao aprovar. Tente novamente ou fale conosco.');
-                }
+                    const fd = new FormData(); fd.append('file', audioBlob); fd.append('upload_preset', cloudinaryPreset);
+                    const res = await fetch(`https://api.cloudinary.com/v1_1/dmuvm1o6m/video/upload`, {method:'POST', body:fd});
+                    const data = await res.json();
+                    
+                    if(data.secure_url) {
+                        await db.collection('mensagens').add({ tenantId: meuTenantId, clienteId: meuClienteId, sender: 'cliente', text: "🎤 Mensagem de Áudio:", fileUrl: data.secure_url, fileType: 'audio', lidaAdmin: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                    }
+                } catch(e) { alert("Erro ao enviar o áudio."); }
+            });
+        }
+
+        // 7. APROVAÇÃO E AGENDAMENTO
+        async function aprovarOrcamento(osId, placa) {
+            if(confirm("Deseja autorizar a oficina a iniciar o serviço? O status do veículo mudará para 'Box'.")) {
+                await db.collection('ordens_servico').doc(osId).update({ status: 'box', ultimaAtualizacao: new Date().toISOString() });
+                await db.collection('mensagens').add({ tenantId: meuTenantId, clienteId: meuClienteId, sender: 'cliente', text: `✅ *Aprovação Oficial:* Autorizei o orçamento do veículo placa [${placa}]. Podem iniciar a execução!`, lidaAdmin: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+                alert("Aprovado com sucesso! A oficina foi notificada.");
             }
         }
 
-        function abrirChat() {
-            alert('Funcionalidade de chat em tempo real sendo integrada. Por favor, utilize o WhatsApp para contato imediato.');
+        async function solicitarAgendamento() {
+            const data = document.getElementById('dataAgendamento').value;
+            const motivo = document.getElementById('motivoAgendamento').value.trim();
+            if(!data || !motivo) { alert("Preencha a data e o motivo da revisão."); return; }
+            
+            const dataFormatada = data.split('-').reverse().join('/');
+            const msgAgendamento = `📅 *Solicitação de Agendamento*\n*Data Desejada:* ${dataFormatada}\n*Motivo/Veículo:* ${motivo}\n\nPor favor, confirmem se há disponibilidade.`;
+            
+            await db.collection('mensagens').add({ tenantId: meuTenantId, clienteId: meuClienteId, sender: 'cliente', text: msgAgendamento, lidaAdmin: false, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+            
+            bootstrap.Modal.getInstance(document.getElementById('modalAgendamento')).hide();
+            document.getElementById('dataAgendamento').value = ''; document.getElementById('motivoAgendamento').value = '';
+            document.getElementById('chat-tab').click(); 
         }
     </script>
 </body>
