@@ -15,8 +15,9 @@ app.firebaseConfig = {
 if (!firebase.apps.length) firebase.initializeApp(app.firebaseConfig);
 app.db = firebase.firestore();
 
-app.CLOUDINARY_CLOUD_NAME = sessionStorage.getItem('t_cloudName') || 'dmuvm1o6m'; 
-app.CLOUDINARY_UPLOAD_PRESET = sessionStorage.getItem('t_cloudPreset') || 'evolution'; 
+// Configurações de Sessão e Ambiente
+app.CLOUDINARY_CLOUD_NAME = sessionStorage.getItem('t_cloudName') || 'dmuvm1o6m';
+app.CLOUDINARY_UPLOAD_PRESET = sessionStorage.getItem('t_cloudPreset') || 'evolution';
 app.API_KEY_GEMINI = sessionStorage.getItem('t_gemini');
 app.t_id = sessionStorage.getItem('t_id');
 app.t_nome = sessionStorage.getItem('t_nome');
@@ -27,6 +28,7 @@ app.t_mods = JSON.parse(sessionStorage.getItem('t_mods') || '{}');
 
 if (!app.t_id && !sessionStorage.getItem('thiaguinho_master')) window.location.replace('index.html');
 
+// Bancos de Dados Locais (Cache)
 app.bancoOSCompleto = [];
 app.bancoEstoque = [];
 app.bancoFin = [];
@@ -39,17 +41,18 @@ app.osParaFaturar = null;
 app.chatActiveClienteId = null;
 
 // =====================================================================
-// 2. INICIALIZAÇÃO DA INTERFACE (RBAC)
+// 2. INICIALIZAÇÃO DA INTERFACE (RBAC E SETUP)
 // =====================================================================
 document.addEventListener('DOMContentLoaded', () => {
     const lblEmpresa = document.getElementById('lblEmpresa');
     if (lblEmpresa) lblEmpresa.innerText = app.t_nome || 'thIAguinho Hub';
-    
-    const lblUsuario = document.getElementById('lblUsuario');
-    if (lblUsuario) lblUsuario.innerText = app.user_nome;
+
+    const lblUsuario = document.getElementById('lblUsuario');    if (lblUsuario) lblUsuario.innerText = app.user_nome;
+
+    // Injeção de Estilos para Controle de Acesso (RBAC)
     const style = document.createElement('style');
     const lblComissao = document.getElementById('lblComissaoUser');
-    
+
     if (app.t_role === 'equipe') {
         style.innerHTML = '.admin-only, .gestao-only { display: none !important; } .mecanico-only { display: flex !important;}';
         if (lblComissao) lblComissao.innerText = `Mecânico - Produção: ${app.user_comissao}%`;
@@ -65,17 +68,18 @@ document.addEventListener('DOMContentLoaded', () => {
     app.construirMenuLateral();
     const linkInicio = document.querySelector('.nav-sidebar .nav-link');
     if(linkInicio) app.mostrarTela('tela_jarvis', 'Inteligência Automotiva', linkInicio);
-    
+
+    // Inicia Listeners
     app.iniciarEscutaOS();
     app.iniciarEscutaCrm();
     app.iniciarEscutaMensagens();
-    
+
     if(app.t_role === 'admin' || app.t_role === 'gerente') {
         app.iniciarEscutaEstoque();
         app.iniciarEscutaFinanceiro();
+        app.iniciarEscutaEquipe(); // Carrega funcionários
     }
     if(app.t_role === 'admin') {
-        app.iniciarEscutaEquipe();
         app.iniciarEscutaLixeira();
         app.iniciarEscutaIA();
     }
@@ -92,11 +96,11 @@ app.showToast = function(msg, type='success') {
 
 app.sair = function() { sessionStorage.clear(); window.location.href = 'index.html'; };
 
-app.construirMenuLateral = function() {
-    const menu = document.getElementById('menuLateral');
+app.construirMenuLateral = function() {    const menu = document.getElementById('menuLateral');
     if (!menu) return;
 
-    let html = `<a class="nav-link active" onclick="app.mostrarTela('tela_jarvis', 'Inteligência Automotiva', this)"><i class="bi bi-robot"></i> Central J.A.R.V.I.S</a>`;    html += `<a class="nav-link" onclick="app.mostrarTela('tela_os', 'Pátio Ativo', this)"><i class="bi bi-kanban text-info"></i> Pátio Kanban</a>`;
+    let html = `<a class="nav-link active" onclick="app.mostrarTela('tela_jarvis', 'Inteligência Automotiva', this)"><i class="bi bi-robot"></i> Central J.A.R.V.I.S</a>`;
+    html += `<a class="nav-link" onclick="app.mostrarTela('tela_os', 'Pátio Ativo', this)"><i class="bi bi-kanban text-info"></i> Pátio Kanban</a>`;
     html += `<a class="nav-link" onclick="app.mostrarTela('tela_arquivo', 'Arquivo Histórico', this); app.renderizarTabelaArquivo();"><i class="bi bi-archive text-warning"></i> Arquivo Morto</a>`;
     
     if (app.t_role === 'admin' || app.t_role === 'gerente') {
@@ -122,7 +126,7 @@ app.mostrarTela = function(id, titulo, btn) {
 };
 
 // =====================================================================
-// 3. BASE CRM E CREDENCIAIS (PORTAL DO CLIENTE)
+// 3. BASE CRM E CREDENCIAIS
 // =====================================================================
 app.iniciarEscutaCrm = function() {
     app.db.collection('clientes_base').where('tenantId', '==', app.t_id).onSnapshot(snap => {
@@ -139,15 +143,25 @@ app.iniciarEscutaCrm = function() {
 
 app.abrirModalCRM = function(mode = 'nova', id = '') {
     document.getElementById('c_id').value = '';
-    document.getElementById('c_nome').value = ''; document.getElementById('c_tel').value = ''; document.getElementById('c_doc').value = '';
-    document.getElementById('c_user').value = ''; document.getElementById('c_pass').value = Math.random().toString(36).slice(-6); document.getElementById('c_notas').value = '';
+    document.getElementById('c_nome').value = ''; 
+    document.getElementById('c_tel').value = ''; 
+    document.getElementById('c_doc').value = '';    document.getElementById('c_user').value = ''; 
+    document.getElementById('c_pass').value = Math.random().toString(36).slice(-6); 
+    document.getElementById('c_notas').value = '';
     
     if(mode === 'edit') {
         const c = app.bancoCrm.find(x => x.id === id);
         if(c) {
-            document.getElementById('c_id').value = c.id; document.getElementById('c_nome').value = c.nome; document.getElementById('c_tel').value = c.telefone; document.getElementById('c_doc').value = c.documento||'';            document.getElementById('c_user').value = c.usuario||''; document.getElementById('c_pass').value = c.senha||''; document.getElementById('c_notas').value = c.anotacoes||'';
+            document.getElementById('c_id').value = c.id; 
+            document.getElementById('c_nome').value = c.nome; 
+            document.getElementById('c_tel').value = c.telefone; 
+            document.getElementById('c_doc').value = c.documento||'';
+            document.getElementById('c_user').value = c.usuario||''; 
+            document.getElementById('c_pass').value = c.senha||''; 
+            document.getElementById('c_notas').value = c.anotacoes||'';
         }
     }
+    new bootstrap.Modal(document.getElementById('modalCrm')).show();
 };
 
 app.salvarClienteCRM = async function(e) {
@@ -180,13 +194,11 @@ app.enviarWhatsAppAprovacao = function() {
     
     let baseURL = window.location.origin + window.location.pathname.replace('painel_oficina.html', '');
     const u = baseURL + 'clientes/projeto_oficina.html';
-    
-    let txt = `Olá ${nome}! A O.S. do seu veículo foi atualizada na *${app.t_nome}*.\n\nAcesse o nosso portal oficial para visualizar o orçamento detalhado, ver fotos e nos contatar pelo chat da plataforma:\n👉 ${u}`;
+        let txt = `Olá ${nome}! A O.S. do seu veículo foi atualizada na *${app.t_nome}*.\n\nAcesse o nosso portal oficial para visualizar o orçamento detalhado, ver fotos e nos contatar pelo chat da plataforma:\n👉 ${u}`;
     if(cZ && cZ.usuario) { txt += `\n\n*Suas Credenciais Seguras:*\nLogin: ${cZ.usuario}\nPIN: ${cZ.senha}`; }
     
     window.open(`https://wa.me/55${cel.replace(/\D/g, '')}?text=${encodeURIComponent(txt)}`, '_blank');
 };
-
 
 // =====================================================================
 // 4. MÓDULO DE CHAT GLOBAL CRM
@@ -194,7 +206,8 @@ app.enviarWhatsAppAprovacao = function() {
 app.iniciarEscutaMensagens = function() {
     app.db.collection('mensagens').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         app.bancoMensagens = snap.docs.map(d => ({id: d.id, ...d.data()}));
-        app.bancoMensagens.sort((a,b) => (a.timestamp?.toMillis()||0) - (b.timestamp?.toMillis()||0));        
+        app.bancoMensagens.sort((a,b) => (a.timestamp?.toMillis()||0) - (b.timestamp?.toMillis()||0));
+        
         let nL = 0;
         app.bancoMensagens.forEach(m => { if(m.sender === 'cliente' && !m.lidaAdmin) nL++; });
         
@@ -230,8 +243,7 @@ app.abrirChatCRM = function(clienteId, nomeCliente) {
     const header = document.getElementById('chatNomeCliente');
     if(header) header.innerHTML = `<span class="text-white-50">Ativo com:</span> <b class="text-accent fs-5">${nomeCliente}</b>`;
     
-    const inputArea = document.getElementById('chatAreaInputGlobal');
-    if(inputArea) inputArea.style.display = 'flex';
+    const inputArea = document.getElementById('chatAreaInputGlobal');    if(inputArea) inputArea.style.display = 'flex';
     
     const area = document.getElementById('chatAreaMsgGlobal');
     if(!area) return;
@@ -243,7 +255,8 @@ app.abrirChatCRM = function(clienteId, nomeCliente) {
     } else {
         mD.forEach(x => {
             if(x.sender === 'cliente' && !x.lidaAdmin) { app.db.collection('mensagens').doc(x.id).update({lidaAdmin: true}); }
-            const t = x.timestamp ? new Date(x.timestamp.toDate()).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : 'agora';            let c = x.text;
+            const t = x.timestamp ? new Date(x.timestamp.toDate()).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'}) : 'agora';
+            let c = x.text;
             
             if(x.fileUrl) {
                 if(x.fileType === 'video' || x.fileUrl.includes('.mp4')) c += `<br><video src="${x.fileUrl}" controls style="max-width:100%; border-radius:8px; margin-top:5px;"></video>`;
@@ -279,8 +292,7 @@ app.enviarAnexoChatGlobal = async function() {
         fd.append('file', inp.files[0]); fd.append('upload_preset', app.CLOUDINARY_UPLOAD_PRESET);
         const res = await fetch(`https://api.cloudinary.com/v1_1/${app.CLOUDINARY_CLOUD_NAME}/auto/upload`, {method:'POST', body:fd});
         const data = await res.json();
-        if(data.secure_url) {
-            await app.db.collection('mensagens').add({
+        if(data.secure_url) {            await app.db.collection('mensagens').add({
                 tenantId: app.t_id, clienteId: app.chatActiveClienteId, sender: 'admin', 
                 text: "📎 Mídia da Oficina:", fileUrl: data.secure_url, fileType: data.resource_type, 
                 lidaCliente: false, timestamp: firebase.firestore.FieldValue.serverTimestamp()
@@ -290,9 +302,9 @@ app.enviarAnexoChatGlobal = async function() {
     } catch(e) { console.error(e); app.showToast("Falha no upload do Cloudinary.", "error"); }
 };
 
-
 // =====================================================================
-// 5. ESTOQUE E ENTRADA N.F. INFINITA// =====================================================================
+// 5. ESTOQUE E ENTRADA N.F. (PARSER XML COMPLETO)
+// =====================================================================
 app.iniciarEscutaEstoque = function() {
     app.db.collection('estoque').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         app.bancoEstoque = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -329,28 +341,22 @@ app.processarXML = function(event) {
         for(let i=0; i<det.length; i++) {
             const prod = det[i].getElementsByTagName("prod")[0];
             if(prod) {
-                const desc = prod.getElementsByTagName("xProd")[0]?.textContent || '';
-                const ncm = prod.getElementsByTagName("NCM")[0]?.textContent || '';
+                const desc = prod.getElementsByTagName("xProd")[0]?.textContent || '';                const ncm = prod.getElementsByTagName("NCM")[0]?.textContent || '';
                 const cfop = prod.getElementsByTagName("CFOP")[0]?.textContent || '';
                 const qtd = parseFloat(prod.getElementsByTagName("qCom")[0]?.textContent || 0);
                 const vUnCom = parseFloat(prod.getElementsByTagName("vUnCom")[0]?.textContent || 0);
                 app.adicionarLinhaNF(desc, ncm, cfop, qtd, vUnCom, (vUnCom * 1.8));
             }
         }
-        app.showToast("XML processado. Itens inseridos!", "success");
+        app.showToast("XML processado. Itens inseridos! Modifique a sua margem de Venda conforme necessário.", "success");
     };
     reader.readAsText(file);
 };
+
 app.adicionarLinhaNF = function(desc='', ncm='', cfop='', qtd=1, custo=0, venda=0) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-1 it-desc" value="${desc}" required></td><td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-1 it-ncm" value="${ncm}"></td><td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary p-1 it-cfop" value="${cfop}"></td><td><input type="number" class="form-control form-control-sm bg-dark text-white border-secondary p-1 it-qtd" value="${qtd}" min="1"></td><td><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-danger border-secondary p-1 it-custo" value="${custo}"></td><td><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-success border-secondary p-1 it-venda fw-bold" value="${venda}"></td><td><button type="button" class="btn btn-sm btn-outline-danger p-1 border-0" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>`;
     document.getElementById('corpoItensNF').appendChild(tr);
-};
-
-app.verificarPgtoCompraNF = function() {
-    const f = document.getElementById('nf_metodo_pagamento').value;
-    const d = document.getElementById('nf_div_parcelas');
-    if(d) d.style.display = f.includes('Parcelado') ? 'block' : 'none';
 };
 
 app.salvarEntradaEstoque = async function(e) {
@@ -384,13 +390,13 @@ app.salvarEntradaEstoque = async function(e) {
 
     if(gerarFinanceiro) {
         let nP = 1; 
-        if(fp.includes('Parcelado')) { 
-            if(parc.includes('2x')) nP = 2; else if(parc.includes('3x')) nP = 3; else if(parc.includes('4x')) nP = 4; else if(parc.includes('6x')) nP = 6; 
+        if(fp.includes('Parcelado')) {             if(parc.includes('2x')) nP = 2; else if(parc.includes('3x')) nP = 3; else if(parc.includes('4x')) nP = 4; else if(parc.includes('6x')) nP = 6; 
         }
         const vP = totalCustoGlobalNF / nP; 
         const stsPgto = (fp.includes('Boleto') || fp.includes('Pendente') || fp.includes('Parcelado') || fp.includes('Crédito')) ? 'pendente' : 'pago';
         
-        for(let i=0; i<nP; i++) {             let dV = new Date(dtBase); 
+        for(let i=0; i<nP; i++) { 
+            let dV = new Date(dtBase); 
             if(nP>1 || stsPgto==='pendente') dV.setDate(dV.getDate() + (i*30)); 
             batch.set(app.db.collection('financeiro').doc(), { 
                 tenantId: app.t_id, tipo: 'despesa', 
@@ -407,7 +413,7 @@ app.salvarEntradaEstoque = async function(e) {
 };
 
 // =====================================================================
-// 6. MOTOR KANBAN E PRONTUÁRIO (O.S)
+// 6. MOTOR KANBAN E PRONTUÁRIO (CORRIGIDO E COMPLETO)
 // =====================================================================
 app.iniciarEscutaOS = function() {
     app.db.collection('ordens_servico').where('tenantId', '==', app.t_id).onSnapshot(snap => {
@@ -424,10 +430,8 @@ app.iniciarEscutaOS = function() {
     });
 };
 
-app.filtrarGlobal = function() { app.renderizarKanban(); app.renderizarTabelaArquivo(); };
-
 app.renderizarKanban = function() {
-    const t = document.getElementById('buscaGeral').value.toLowerCase().trim();
+    const t = document.getElementById('buscaGeral')?.value.toLowerCase().trim() || '';
     let ativos = app.bancoOSCompleto.filter(os => os.status !== 'entregue');
     
     if(t) ativos = ativos.filter(os => (os.placa&&os.placa.toLowerCase().includes(t)) || (os.cliente&&os.cliente.toLowerCase().includes(t)));
@@ -435,11 +439,11 @@ app.renderizarKanban = function() {
     const cols = { patio: '', orcamento: '', aprovacao: '', box: '', pronto: '' };
     let counts = { patio: 0, orcamento: 0, aprovacao: 0, box: 0, pronto: 0 };
     const ordem = ['patio', 'orcamento', 'aprovacao', 'box', 'pronto'];
-
     ativos.forEach(os => {
         const s = os.status || 'patio'; counts[s]++;
         let cor = s === 'pronto' ? 'border-success' : s === 'aprovacao' ? 'border-warning' : s === 'box' ? 'border-info' : s === 'orcamento' ? 'border-primary' : 'border-secondary';
-                const idx = ordem.indexOf(s);
+        
+        const idx = ordem.indexOf(s);
         const nextS = idx < ordem.length-1 ? ordem[idx+1] : null;
         const prevS = idx > 0 ? ordem[idx-1] : null;
         
@@ -449,7 +453,12 @@ app.renderizarKanban = function() {
         cols[s] += `<div class="os-card border-start border-4 ${cor}" onclick="app.abrirModalOS('edit', '${os.id}')"><div class="fast-actions">${btnBack}${btnFwd}</div><div class="d-flex justify-content-between mb-2"><span class="badge bg-dark border border-secondary text-white py-2 px-3">${os.placa}</span></div><h6 class="text-white fw-bold mb-1 w-75 text-truncate">${os.veiculo}</h6><small class="text-white-50"><i class="bi bi-person-fill"></i> ${os.cliente}</small></div>`;
     });
     
-    ordem.forEach(id => { document.getElementById('col_'+id).innerHTML = cols[id]; document.getElementById('count_'+id).innerText = counts[id]; });
+    ordem.forEach(id => { 
+        const el = document.getElementById('col_'+id); 
+        const countEl = document.getElementById('count_'+id);
+        if(el) el.innerHTML = cols[id];
+        if(countEl) countEl.innerText = counts[id]; 
+    });
 };
 
 app.mudarStatusRapido = async function(id, novoStatus) {
@@ -460,21 +469,13 @@ app.mudarStatusRapido = async function(id, novoStatus) {
     await osRef.update({ status: novoStatus, historico: h, ultimaAtualizacao: new Date().toISOString() });
 };
 
-// =====================================================================
-// 7. MODAL DA O.S E COMPOSIÇÃO INFINITA DE ORÇAMENTO
-// =====================================================================
-app.verificarStatusLink = function() {
-    const a = document.getElementById('alertaLinkCliente');
-    if(!a) return;
-    if (document.getElementById('os_status').value === 'aprovacao' && document.getElementById('os_id').value) a.classList.remove('d-none'); else a.classList.add('d-none');
-};
-
 app.abrirModalOS = function(mode = 'nova', id = '') {
     document.getElementById('formOS').reset();
-    document.getElementById('listaPecasCorpo').innerHTML = '';
+    document.getElementById('listaPecasCorpo').innerHTML = ''; // Zera Tabela de Peças
     app.fotosOSAtual = []; app.historicoOSAtual = [];
     document.getElementById('header_placa').innerText = '';
     document.getElementById('listaHistorico').innerHTML = '';
+    document.getElementById('galeriaFotosOS').innerHTML = '';
     
     const btnFat = document.getElementById('btnFaturar'); if(btnFat) btnFat.classList.add('d-none');
     const btnPdf = document.getElementById('btnGerarPDF'); if(btnPdf) btnPdf.classList.add('d-none');
@@ -487,8 +488,8 @@ app.abrirModalOS = function(mode = 'nova', id = '') {
         if (os) {
             document.getElementById('os_id').value = os.id;
             document.getElementById('os_placa').value = os.placa || '';
-            document.getElementById('header_placa').innerText = `[${os.placa}]`;
-            document.getElementById('os_veiculo').value = os.veiculo || '';            document.getElementById('os_cliente').value = os.cliente || '';
+            document.getElementById('header_placa').innerText = `[${os.placa}]`;            document.getElementById('os_veiculo').value = os.veiculo || '';
+            document.getElementById('os_cliente').value = os.cliente || '';
             document.getElementById('os_cliente_id').value = os.clienteId || ''; 
             
             const cZ = app.bancoCrm.find(c => c.nome === os.cliente);
@@ -513,9 +514,16 @@ app.abrirModalOS = function(mode = 'nova', id = '') {
             if (app.t_role === 'admin' && btnDel) btnDel.classList.remove('d-none');
         }
     } else {
-        app.adicionarMaoDeObra();
+        // Garantir que exista pelo menos uma linha para Mão de Obra
+        app.adicionarMaoDeObra(); 
     }
-    app.verificarStatusLink();
+    
+    // Mostrar botão de WhatsApp se estiver em aprovação
+    const btnLink = document.getElementById('alertaLinkCliente');
+    if(btnLink) {
+        if (document.getElementById('os_status').value === 'aprovacao' && document.getElementById('os_id').value) btnLink.classList.remove('d-none'); else btnLink.classList.add('d-none');
+    }
+
     new bootstrap.Modal(document.getElementById('modalOS')).show();
 };
 
@@ -528,8 +536,8 @@ app.adicionarDoEstoque = function() {
 
 app.adicionarMaoDeObra = function() { app.adicionarLinhaPeca("Serviço / Mão de Obra", 1, 0, 0, null, true); };
 
-app.adicionarLinhaPeca = function(desc, qtd, custo, venda, idEstoque, isMaoObra) {
-    const tr = document.createElement('tr');
+// ADICIONADOR INFINITO DE PEÇAS E MÃO DE OBRA NA O.S.
+app.adicionarLinhaPeca = function(desc, qtd, custo, venda, idEstoque, isMaoObra) {    const tr = document.createElement('tr');
     const mo = isMaoObra ? `data-maoobra="true"` : '';
     const est = idEstoque ? `data-idestoque="${idEstoque}" readonly` : '';
     tr.innerHTML = `<td><input type="text" class="form-control form-control-sm bg-dark text-white border-secondary peca-desc p-2" value="${desc}" ${est} ${mo} placeholder="Descreva..."></td>
@@ -537,12 +545,14 @@ app.adicionarLinhaPeca = function(desc, qtd, custo, venda, idEstoque, isMaoObra)
         <td class="gestao-only"><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-danger border-secondary peca-custo p-2" value="${custo}" onchange="app.calcularTotalOS()"></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm bg-dark text-success border-secondary peca-venda p-2 fw-bold" value="${venda}" onchange="app.calcularTotalOS()"></td>
         <td><input type="text" class="form-control form-control-sm bg-black text-white border-0 peca-total fw-bold p-2" readonly value="0.00"></td>
-        <td class="text-center" data-html2canvas-ignore><button type="button" class="btn btn-sm btn-outline-danger border-0 mt-1" onclick="this.closest('tr').remove(); app.calcularTotalOS()"><i class="bi bi-trash"></i></button></td>`;    document.getElementById('listaPecasCorpo').appendChild(tr);
+        <td class="text-center" data-html2canvas-ignore><button type="button" class="btn btn-sm btn-outline-danger border-0 mt-1" onclick="this.closest('tr').remove(); app.calcularTotalOS()"><i class="bi bi-trash"></i></button></td>`;
+    document.getElementById('listaPecasCorpo').appendChild(tr);
     app.calcularTotalOS();
 };
 
 app.calcularTotalOS = function() {
     let t = 0; let tc = 0;
+    // Varre todas as linhas dinâmicas de Peças/Serviços
     document.querySelectorAll('#listaPecasCorpo tr').forEach(tr => {
         const q = parseFloat(tr.querySelector('.peca-qtd').value)||0;
         const v = parseFloat(tr.querySelector('.peca-venda').value)||0;
@@ -562,6 +572,7 @@ app.salvarOS = async function() {
     const clienteOS = document.getElementById('os_cliente').value.trim();
     const telOS = document.getElementById('os_celular').value.trim();
 
+    // Lógica para criar cliente no CRM se não existir
     let cId = document.getElementById('os_cliente_id').value;
     if(clienteOS && !app.bancoCrm.find(c => c.nome.toLowerCase() === clienteOS.toLowerCase())) {
         const p = { tenantId: app.t_id, nome: clienteOS, telefone: telOS, usuario: '', senha: '' };
@@ -569,31 +580,32 @@ app.salvarOS = async function() {
         cId = d.id;
     }
 
+    // Coleta todas as linhas
     document.querySelectorAll('#listaPecasCorpo tr').forEach(tr => {
         const descInput = tr.querySelector('.peca-desc'); const desc = descInput.value.trim();
         const idEstoque = descInput.dataset.idestoque || null; const isMaoObra = descInput.dataset.maoobra === "true";
         const q = parseFloat(tr.querySelector('.peca-qtd').value)||1; const c = parseFloat(tr.querySelector('.peca-custo').value)||0; const v = parseFloat(tr.querySelector('.peca-venda').value)||0;
         if (desc !== '') { pecasArray.push({ desc, qtd:q, custo:c, venda:v, idEstoque, isMaoObra }); tVenda += (q*v); tCusto += (q*c); if(isMaoObra) tMO += (q*v); }
-    });
-    
+    });    
     app.historicoOSAtual.push({  new Date().toISOString(), usuario: app.user_nome, acao: id ? "O.S e Orçamento atualizados." : "O.S. Técnica Aberta." });
     
     const payload = {
         tenantId: app.t_id, placa: document.getElementById('os_placa').value.toUpperCase(),
-        veiculo: document.getElementById('os_veiculo').value, cliente: clienteOS, clienteId: cId, celular: telOS,
+        veiculo: document.getElementById('os_veiculo').value, cliente:  clienteOS, clienteId: cId, celular: telOS,
         status: document.getElementById('os_status').value, relatoCliente: document.getElementById('os_relato_cliente').value,
         diagnostico: document.getElementById('os_diagnostico').value,
         chk_combustivel: document.getElementById('chk_combustivel') ? document.getElementById('chk_combustivel').checked : false, 
         chk_arranhado: document.getElementById('chk_arranhado') ? document.getElementById('chk_arranhado').checked : false,
         chk_bateria: document.getElementById('chk_bateria') ? document.getElementById('chk_bateria').checked : false, 
-        chk_pneus: document.getElementById('chk_pneus') ? document.getElementById('chk_pneus').checked : false,        pecas: pecasArray, total: tVenda, custoTotal: tCusto, maoObraTotal: tMO, fotos: app.fotosOSAtual,
+        chk_pneus: document.getElementById('chk_pneus') ? document.getElementById('chk_pneus').checked : false,
+        pecas: pecasArray, total: tVenda, custoTotal: tCusto, maoObraTotal: tMO, fotos: app.fotosOSAtual,
         historico: app.historicoOSAtual, ultimaAtualizacao: new Date().toISOString()
     };
-    
+
     if (!id) payload.mecanico = app.user_nome;
-    
+
     if (document.getElementById('os_status').value === 'entregue') { app.showToast("Para fechar e entregar, use o botão Verde de FATURAR.", "warning"); return; }
-    
+
     try {
         if (id) await app.db.collection('ordens_servico').doc(id).update(payload);
         else await app.db.collection('ordens_servico').add(payload);
@@ -606,13 +618,24 @@ app.salvarOS = async function() {
     }
 };
 
+app.apagarOS = async function() {
+    if(app.t_role !== 'admin') { app.showToast("Cancelamento Bloqueado.", "error"); return; }
+    const m = prompt("ATENÇÃO: Justificativa para Auditoria:");
+    if(!m || m.trim() === '') return;
+    const id = document.getElementById('os_id').value;
+    const osCancelada = app.bancoOSCompleto.find(x => x.id === id);
+    await app.db.collection('lixeira_auditoria').add({ tenantId: app.t_id, placaOriginal: osCancelada.placa, apagadoPor: app.user_nome, apagadoEm: new Date().toISOString(), motivo: m, dadosAntigos: osCancelada });
+    await app.db.collection('ordens_servico').doc(id).delete();
+    app.showToast("O.S. Deletada.", "success");
+    bootstrap.Modal.getInstance(document.getElementById('modalOS')).hide();
+};
+
 // =====================================================================
-// 8. FATURAMENTO (LÓGICA DRE INTEGRAL)
+// 7. FATURAMENTO E DRE
 // =====================================================================
 app.verificarPgtoOS = function() {
     const f = document.getElementById('fat_metodo').value;
-    const d = document.getElementById('fat_div_parcelas');
-    if(d) d.style.display = f.includes('Parcelado') ? 'block' : 'none';
+    const d = document.getElementById('fat_div_parcelas');    if(d) d.style.display = f.includes('Parcelado') ? 'block' : 'none';
 };
 
 app.abrirFaturamentoDireto = function(id) {
@@ -623,7 +646,6 @@ app.abrirFaturamentoDireto = function(id) {
 
 app.processarFaturamentoCompleto = async function() {
     if(!app.osParaFaturar) return;
-    
     const fp = document.getElementById('fat_metodo').value;
     const parcelasText = document.getElementById('fat_parcelas').value;
     const totalVenda = app.osParaFaturar.total;
@@ -635,7 +657,7 @@ app.processarFaturamentoCompleto = async function() {
         if(parcelasText.includes('2x')||parcelasText.includes('30/60')) nP = 2; 
         else if(parcelasText.includes('3x')||parcelasText.includes('90')) nP = 3; 
         else if(parcelasText.includes('4x')) nP = 4; 
-        else if(parcelasText.includes('5x')) nP = 5;         else if(parcelasText.includes('6x')) nP = 6; 
+        else if(parcelasText.includes('6x')) nP = 6;
         else if(parcelasText.includes('10x')) nP = 10; 
         else if(parcelasText.includes('12x')) nP = 12; 
     }
@@ -662,8 +684,7 @@ app.processarFaturamentoCompleto = async function() {
                 const estDoc = await estRef.get();
                 if(estDoc.exists) batch.update(estRef, { qtd: Math.max(0, estDoc.data().qtd - p.qtd) });
             }
-        }
-    }
+        }    }
 
     let usrComissao = app.user_comissao; if(app.t_role === 'admin') usrComissao = 0;
     const comissaoReais = ((app.osParaFaturar.maoObraTotal||0) * (usrComissao / 100));
@@ -674,19 +695,49 @@ app.processarFaturamentoCompleto = async function() {
     batch.update(app.db.collection('ordens_servico').doc(app.osParaFaturar.id), { status: 'entregue', baixaEstoqueFeita: true, comissaoProcessada: comissaoReais, mecanicoReal: app.osParaFaturar.mecanico || app.user_nome, historico: h, ultimaAtualizacao: new Date().toISOString() });
     
     await batch.commit();
-    app.showToast("ENTREGA CONFIRMADA! Pagamentos integrados ao DRE.", "success");
+    app.showToast("ENTREGA CONFIRMADA!", "success");
     bootstrap.Modal.getInstance(document.getElementById('modalFaturamento')).hide();
-    
     const modalOS = bootstrap.Modal.getInstance(document.getElementById('modalOS'));
     if(modalOS) modalOS.hide();
 };
 
-// =====================================================================
-// 9. FINANCEIRO AVULSO (DRE) E EQUIPE
-// =====================================================================
-app.abrirModalFinanceiro = function(tipo) {    document.getElementById('fin_tipo').value = tipo;
-    document.getElementById('fin_titulo').innerHTML = tipo === 'receita' ? '<i class="bi bi-plus-circle text-success me-2"></i> Lançar Receita' : '<i class="bi bi-dash-circle text-danger me-2"></i> Lançar Despesa';
+app.iniciarEscutaFinanceiro = function() {
+    app.db.collection('financeiro').where('tenantId', '==', app.t_id).onSnapshot(snap => {
+        app.bancoFin = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        app.renderizarFinanceiroGeral();
+    });
+};
+
+app.renderizarFinanceiroGeral = function() {
+    if(!document.getElementById('tela_financeiro')) return;
+    let totRec = 0, totPag = 0;
+    const tPagar = document.getElementById('tabelaPagarCorpo'); const tReceber = document.getElementById('tabelaReceberCorpo');
+    let hPagar = '', hReceber = '';
     
+    app.bancoFin.sort((a,b) => new Date(a.vencimento) - new Date(b.vencimento)).forEach(f => {
+        const isR = f.tipo === 'receita';
+        if(isR) totRec += f.valor; else totPag += f.valor;
+        const cor = isR ? 'text-success' : 'text-danger';
+        const st = f.status === 'pago' ? `<span class="badge bg-success px-2 py-1"><i class="bi bi-check2-all"></i> Pago</span>` : `<span class="badge bg-warning text-dark px-2 py-1"><i class="bi bi-hourglass-split"></i> Aberto</span>`;
+        const btn = f.status === 'pendente' ? `<button class="btn btn-sm btn-outline-${isR?'success':'danger'} shadow-sm fw-bold px-3" onclick="app.db.collection('financeiro').doc('${f.id}').update({status:'pago'})"><i class="bi bi-currency-dollar"></i> Baixar</button>` : '';
+        const html = `<tr><td class="text-white-50"><i class="bi bi-calendar-event me-2"></i> ${new Date(f.vencimento).toLocaleDateString('pt-BR')}</td><td class="text-white fw-bold">${f.desc}</td><td><span class="badge bg-dark border border-secondary px-3 py-1 text-white-50">${f.parcelaAtual}/${f.totalParcelas}</span></td><td class="text-info small fw-bold">${f.metodo || 'Dinheiro'}</td><td class="${cor} fw-bold fs-6">R$ ${f.valor.toFixed(2).replace('.',',')}</td><td>${st}</td><td class="gestao-only">${btn} <button class="btn btn-sm btn-link text-danger admin-only" onclick="app.db.collection('financeiro').doc('${f.id}').delete()"><i class="bi bi-trash"></i></button></td></tr>`;
+        if(isR) hReceber += html; else hPagar += html;
+    });
+
+    if(tPagar) tPagar.innerHTML = hPagar || '<tr><td colspan="7" class="text-center text-white-50 py-4">Nenhuma conta a pagar aberta.</td></tr>';
+    if(tReceber) tReceber.innerHTML = hReceber || '<tr><td colspan="7" class="text-center text-white-50 py-4">Nenhuma fatura a receber.</td></tr>';
+
+    let totCom = 0;
+    app.bancoOSCompleto.filter(o=>o.status==='entregue').forEach(o => totCom += (o.comissaoProcessada||0));
+    
+    document.getElementById('dreReceitas').innerText = `R$ ${totRec.toFixed(2).replace('.',',')}`;
+    document.getElementById('dreDespesas').innerText = `R$ ${totPag.toFixed(2).replace('.',',')}`;
+    document.getElementById('dreComissoes').innerText = `R$ ${totCom.toFixed(2).replace('.',',')}`;
+    document.getElementById('dreLucro').innerText = `R$ ${(totRec - totPag - totCom).toFixed(2).replace('.',',')}`;};
+
+app.abrirModalFinanceiro = function(tipo) {
+    document.getElementById('fin_tipo').value = tipo;
+    document.getElementById('fin_titulo').innerHTML = tipo === 'receita' ? '<i class="bi bi-plus-circle text-success me-2"></i> Lançar Receita' : '<i class="bi bi-dash-circle text-danger me-2"></i> Lançar Despesa';
     document.getElementById('fin_data').value = new Date().toISOString().split('T')[0];
     app.verificarPgtoFinManual();
     new bootstrap.Modal(document.getElementById('modalFin')).show();
@@ -720,69 +771,89 @@ app.salvarLancamentoFinanceiro = async function(e) {
     bootstrap.Modal.getInstance(document.getElementById('modalFin')).hide(); e.target.reset();
 };
 
-app.iniciarEscutaFinanceiro = function() {
-    app.db.collection('financeiro').where('tenantId', '==', app.t_id).onSnapshot(snap => {
-        app.bancoFin = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        app.renderizarFinanceiroGeral();
-    });
-};
-
-app.renderizarFinanceiroGeral = function() {
-    if(!document.getElementById('tela_financeiro')) return;
-    let totRec = 0, totPag = 0;
-    const tPagar = document.getElementById('tabelaPagarCorpo'); const tReceber = document.getElementById('tabelaReceberCorpo');
-    let hPagar = '', hReceber = '';
-    
-    app.bancoFin.sort((a,b) => new Date(a.vencimento) - new Date(b.vencimento)).forEach(f => {        const isR = f.tipo === 'receita';
-        if(isR) totRec += f.valor; else totPag += f.valor;
-        const cor = isR ? 'text-success' : 'text-danger';
-        const st = f.status === 'pago' ? `<span class="badge bg-success px-2 py-1"><i class="bi bi-check2-all"></i> Pago</span>` : `<span class="badge bg-warning text-dark px-2 py-1"><i class="bi bi-hourglass-split"></i> Aberto</span>`;
-        const btn = f.status === 'pendente' ? `<button class="btn btn-sm btn-outline-${isR?'success':'danger'} shadow-sm fw-bold px-3" onclick="app.db.collection('financeiro').doc('${f.id}').update({status:'pago'})"><i class="bi bi-currency-dollar"></i> Baixar</button>` : '';
-        const html = `<tr><td class="text-white-50"><i class="bi bi-calendar-event me-2"></i> ${new Date(f.vencimento).toLocaleDateString('pt-BR')}</td><td class="text-white fw-bold">${f.desc}</td><td><span class="badge bg-dark border border-secondary px-3 py-1 text-white-50">${f.parcelaAtual}/${f.totalParcelas}</span></td><td class="text-info small fw-bold">${f.metodo || 'Dinheiro'}</td><td class="${cor} fw-bold fs-6">R$ ${f.valor.toFixed(2).replace('.',',')}</td><td>${st}</td><td class="gestao-only">${btn} <button class="btn btn-sm btn-link text-danger admin-only" onclick="app.db.collection('financeiro').doc('${f.id}').delete()"><i class="bi bi-trash"></i></button></td></tr>`;
-        if(isR) hReceber += html; else hPagar += html;
-    });
-
-    if(tPagar) tPagar.innerHTML = hPagar || '<tr><td colspan="7" class="text-center text-white-50 py-4">Nenhuma conta a pagar aberta.</td></tr>';
-    if(tReceber) tReceber.innerHTML = hReceber || '<tr><td colspan="7" class="text-center text-white-50 py-4">Nenhuma fatura a receber.</td></tr>';
-
-    let totCom = 0;
-    app.bancoOSCompleto.filter(o=>o.status==='entregue').forEach(o => totCom += (o.comissaoProcessada||0));
-    
-    document.getElementById('dreReceitas').innerText = `R$ ${totRec.toFixed(2).replace('.',',')}`;
-    document.getElementById('dreDespesas').innerText = `R$ ${totPag.toFixed(2).replace('.',',')}`;
-    document.getElementById('dreComissoes').innerText = `R$ ${totCom.toFixed(2).replace('.',',')}`;
-    document.getElementById('dreLucro').innerText = `R$ ${(totRec - totPag - totCom).toFixed(2).replace('.',',')}`;
-};
-
+// =====================================================================
+// 8. GESTÃO DE EQUIPE (COM EDIÇÃO E FINANCEIRO PESSOAL)
+// =====================================================================
 app.iniciarEscutaEquipe = function() {
     app.db.collection('funcionarios').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         const tbody = document.getElementById('tabelaEquipe');
         if(!tbody) return;
         if(snap.empty) { tbody.innerHTML = '<tr><td colspan="5" class="text-center text-white-50 py-5 fs-5">Sem equipe.</td></tr>'; return; }
+        
         tbody.innerHTML = snap.docs.map(doc => {
-            const f = doc.data(); 
+            const f = doc.data();
+            // Cálculo de Comissões Geradas            const comissoes = app.bancoOSCompleto
+                .filter(o => o.status === 'entregue' && o.mecanico === f.nome)
+                .reduce((acc, o) => acc + (o.maoObraTotal * (f.comissao || 0) / 100), 0);
+            
+            // Cálculo de Adiantamentos/Financeiro Pessoal
+            const avancos = (f.avancos || []).reduce((acc, a) => acc + (a.valor || 0), 0);
+            const saldo = comissoes - avancos;
+
             const nAcesso = f.role === 'gerente' ? '<span class="badge bg-warning text-dark">Gerente/Vendedor</span>' : '<span class="badge bg-secondary text-white">Mecânico/Produção</span>';
-            return `<tr><td class="fw-bold text-white fs-6"><i class="bi bi-person-circle text-success me-2"></i> ${f.nome}</td><td>${nAcesso}</td><td class="text-warning">${f.comissao||0}%</td><td><span class="bg-dark px-3 py-1 rounded text-info">${f.usuario}</span><br><small class="text-white-50">${f.senha}</small></td><td class="admin-only"><button class="btn btn-sm btn-outline-danger shadow-sm px-3" onclick="app.apagarFuncionario('${doc.id}')"><i class="bi bi-slash-circle me-1"></i> Revogar</button></td></tr>`;
+            
+            return `<tr>
+                <td class="fw-bold text-white fs-6"><i class="bi bi-person-circle text-success me-2"></i> ${f.nome}</td>
+                <td>${nAcesso}</td>
+                <td class="text-warning">${f.comissao||0}%</td>
+                <td>
+                    <div class="small text-white-50">Gerado: R$ ${comissoes.toFixed(2)}</div>
+                    <div class="small text-danger">Retirado: -R$ ${avancos.toFixed(2)}</div>
+                    <div class="small text-success fw-bold">A Receber: R$ ${saldo.toFixed(2)}</div>
+                </td>
+                <td class="admin-only d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-warning px-3" onclick="app.gerenciarFinancasFunc('${doc.id}', '${f.nome}')" title="Adiantamento Financeiro"><i class="bi bi-wallet2"></i></button>
+                    <button class="btn btn-sm btn-outline-danger shadow-sm px-3" onclick="app.apagarFuncionario('${doc.id}')"><i class="bi bi-slash-circle me-1"></i> Revogar</button>
+                </td>
+            </tr>`;
         }).join('');
     });
 };
 
+// FUNÇÃO PARA ADICIONAR/EDITAR FINANCEIRO DO FUNCIONÁRIO
+app.gerenciarFinancasFunc = async function(id, nome) {
+    const val = prompt(`Registrar Adiantamento/Desconto para ${nome} (Ex: 50.00). Use negativo para estorno:`);
+    if (val !== null && val !== '') {
+        const v = parseFloat(val);
+        if (!isNaN(v)) {
+            // Adiciona ao array de adiantamentos no documento do funcionário
+            const docRef = app.db.collection('funcionarios').doc(id);
+            const doc = await docRef.get();
+            let avancos = doc.data().avancos || [];
+            avancos.push({ valor: v,  new Date().toISOString(), obs: 'Ajuste Manual' });
+            await docRef.update({ avancos: avancos });
+            app.showToast("Registro financeiro atualizado.");
+        }
+    }
+};
+
 app.salvarFuncionario = async function(e) {
     e.preventDefault();
-    await app.db.collection('funcionarios').add({ tenantId: app.t_id, nome: document.getElementById('f_nome').value, role: document.getElementById('f_cargo').value, comissao: parseFloat(document.getElementById('f_comissao').value), usuario: document.getElementById('f_user').value, senha: document.getElementById('f_pass').value });
+    await app.db.collection('funcionarios').add({ 
+        tenantId: app.t_id, 
+        nome: document.getElementById('f_nome').value,         role: document.getElementById('f_cargo').value, 
+        comissao: parseFloat(document.getElementById('f_comissao').value), 
+        usuario: document.getElementById('f_user').value, 
+        senha: document.getElementById('f_pass').value,
+        avancos: [] // Inicializa controle financeiro
+    });
     app.showToast("Acesso corporativo criado.", "success"); e.target.reset(); bootstrap.Modal.getInstance(document.getElementById('modalEquipe')).hide();
 };
 
 app.apagarFuncionario = async function(id) { if(confirm("Deseja bloquear permanentemente o acesso deste usuário?")) { await app.db.collection('funcionarios').doc(id).delete(); app.showToast("Acesso destruído.", "success"); } };
 
+// =====================================================================
+// 9. ARQUIVO, LIXEIRA E HISTÓRICO
+// =====================================================================
 app.renderizarTabelaArquivo = function() {
     let entregues = app.bancoOSCompleto.filter(os => os.status === 'entregue').sort((a,b) => new Date(b.ultimaAtualizacao) - new Date(a.ultimaAtualizacao));
     const t = document.getElementById('buscaGeral').value.toLowerCase().trim();
     if (t) entregues = entregues.filter(o => (o.placa&&o.placa.toLowerCase().includes(t)) || (o.cliente&&o.cliente.toLowerCase().includes(t)));
     
     const tbody = document.getElementById('tabelaArquivoCorpo');
-    if(tbody) tbody.innerHTML = entregues.map(os => `<tr><td class="text-white-50 small"><i class="bi bi-calendar-check text-success me-2"></i> ${new Date(os.ultimaAtualizacao).toLocaleDateString('pt-BR')}</td><td><span class="badge bg-dark border px-3 py-2 fs-6 shadow-sm">${os.placa}</span></td><td class="text-white fw-bold">${os.veiculo}</td><td class="text-white-50">${os.cliente}</td><td class="gestao-only text-success fw-bold">R$ ${(os.total||0).toFixed(2).replace('.',',')}</td><td class="text-center"><button class="btn btn-outline-info shadow-sm fw-bold px-4" onclick="app.abrirModalOS('edit', '${os.id}')"><i class="bi bi-folder-symlink-fill me-2"></i> Prontuário</button></td></tr>`).join('');
+    if(tbody) tbody.innerHTML = entregues.map(os => `<tr><td class="text-white-50 small"><i class="bi bi-calendar-check text-success me-2"></i> ${new Date(os.ultimaAtualizacao).toLocaleDateString('pt-BR')}</td><td><span class="badge bg-dark border px-3 py-2 fs-6 shadow-sm">${os.placa}</span></td><td class="text-white fw-bold">${os.veiculo}</td><td class="text-white-50">${os.cliente}</td><td class="gestao-only text-success fw-bold">R$ ${(os.total||0).toFixed(2).replace('.',',')}</td><td class="text-center"><button class="btn btn-outline-info shadow-sm fw-bold px-4" onclick="app.abrirModalOS('edit', '${os.id}')"><i class="bi bi-folder-symlink-fill me-2"></i> Ver Prontuário</button></td></tr>`).join('');
 };
+
 app.iniciarEscutaLixeira = function() {
     app.db.collection('lixeira_auditoria').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         const tb = document.getElementById('tabelaLixeiraCorpo');
@@ -793,24 +864,8 @@ app.iniciarEscutaLixeira = function() {
     });
 };
 
-app.apagarOS = async function() {
-    if(app.t_role !== 'admin') { app.showToast("Cancelamento Bloqueado. Apenas Gestor Máximo pode apagar.", "error"); return; }
-    
-    const m = prompt("ATENÇÃO: A Ficha Técnica será cancelada e destruída do pátio. \nDigite a JUSTIFICATIVA (Obrigatório para Auditoria):");
-    if(!m || m.trim() === '') { app.showToast("Operação Abortada. A justificativa é obrigatória.", "error"); return; }
-    
-    const id = document.getElementById('os_id').value;
-    const osCancelada = app.bancoOSCompleto.find(x => x.id === id);
-    
-    await app.db.collection('lixeira_auditoria').add({ tenantId: app.t_id, placaOriginal: osCancelada.placa, apagadoPor: app.user_nome, apagadoEm: new Date().toISOString(), motivo: m, dadosAntigos: osCancelada });
-    await app.db.collection('ordens_servico').doc(id).delete();
-    
-    app.showToast("O.S. Deletada com sucesso. Arquivada na Lixeira.", "success");
-    bootstrap.Modal.getInstance(document.getElementById('modalOS')).hide();
-};
-
 // =====================================================================
-// 10. CLOUDINARY E LAUDO PDF
+// 10. CLOUDINARY E LAUDO PDF (COMPLETO)
 // =====================================================================
 app.configurarCloudinary = function() {
     if (!app.CLOUDINARY_CLOUD_NAME || !app.CLOUDINARY_UPLOAD_PRESET) return;
@@ -826,22 +881,25 @@ app.renderizarGaleria = function() {
 };
 
 app.removerFoto = function(index) { app.fotosOSAtual.splice(index, 1); app.historicoOSAtual.push({  new Date().toISOString(), usuario: app.user_nome, acao: "Removeu foto." }); app.renderizarGaleria(); };
-
 app.renderizarHistorico = function() { 
     const hist = document.getElementById('listaHistorico');
     if(hist) hist.innerHTML = app.historicoOSAtual.length === 0 ? '' : [...app.historicoOSAtual].sort((a,b) => new Date(b.data) - new Date(a.data)).map(h => `<li class="timeline-item"><strong class="text-white">${h.usuario}</strong> - <span class="text-info">${new Date(h.data).toLocaleString('pt-BR')}</span><p class="mb-0 mt-1 bg-dark d-inline-block px-3 py-1 rounded border border-secondary">${h.acao}</p></li>`).join(''); 
 };
+
 async function carregarImagemParaPDF(url) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = 'Anonymous';
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width; canvas.height = img.height;
-            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
             resolve(canvas.toDataURL('image/jpeg'));
         };
-        img.onerror = reject; img.src = url;
+        img.onerror = reject;
+        img.src = url;
     });
 }
 
@@ -859,12 +917,23 @@ app.exportarPDFMenechelli = async function() {
         if (app.fotosOSAtual && app.fotosOSAtual.length > 0) {
             if (y > 220) { doc.addPage(); y = 20; }
             doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(`EVIDÊNCIAS FOTOGRÁFICAS (LAUDO VISUAL)`, 15, y); doc.line(15, y+2, pageWidth-15, y+2); y += 10;
-            let imgX = 15; let imgY = y; const imgSize = 40; const margin = 5;
+            
+            let imgX = 15;
+            let imgY = y;
+            const imgSize = 40;
+            const margin = 5;
+            
             for (let i = 0; i < app.fotosOSAtual.length; i++) {
                 try {
                     const base64Img = await carregarImagemParaPDF(app.fotosOSAtual[i]);
-                    if (imgX + imgSize > pageWidth - 15) { imgX = 15; imgY += imgSize + margin; }
-                    if (imgY + imgSize > 280) { doc.addPage(); imgY = 20; imgX = 15; }
+                    if (imgX + imgSize > pageWidth - 15) {
+                        imgX = 15;
+                        imgY += imgSize + margin;
+                    }                    if (imgY + imgSize > 280) {
+                        doc.addPage();
+                        imgY = 20;
+                        imgX = 15;
+                    }
                     doc.addImage(base64Img, 'JPEG', imgX, imgY, imgSize, imgSize);
                     imgX += imgSize + margin;
                 } catch (e) { console.error("Erro ao carregar imagem para o PDF", e); }
@@ -880,6 +949,7 @@ app.exportarPDFMenechelli = async function() {
         doc.save(`OS_Oficina_${placa}_${new Date().getTime()}.pdf`); app.showToast("PDF gerado com sucesso!", "success");
     } catch (erro) { console.error("Erro na geração do PDF:", erro); app.showToast("Erro ao gerar o documento PDF.", "error"); } finally { btn.innerHTML = '<i class="bi bi-file-earmark-pdf-fill me-1"></i> Imprimir Laudo Oficial'; btn.disabled = false; }
 };
+
 // =====================================================================
 // 11. MÓDULO DE INTELIGÊNCIA ARTIFICIAL (GEMINI 2.0 FLASH)
 // =====================================================================
@@ -908,8 +978,7 @@ app.apagarConhecimentoIA = async function(id) { if(confirm("Deseja apagar este c
 app.processarArquivoParaIA = function(event) {
     const file = event.target.files[0]; if(!file) return;
     const statusLabel = document.getElementById('iaFileStatus'); if(statusLabel) { statusLabel.className = "text-warning fw-bold d-block text-center"; statusLabel.innerText = "Lendo arquivo e injetando conhecimento..."; }
-    const reader = new FileReader();
-    reader.onload = async function(e) {
+    const reader = new FileReader();    reader.onload = async function(e) {
         const text = e.target.result; const txtLimpo = text.substring(0, 5000); 
         await app.salvarConhecimentoIA(`[Arquivo Importado: ${file.name}]\n\n${txtLimpo}`);
         if(statusLabel) { statusLabel.className = "text-success fw-bold d-block text-center"; statusLabel.innerText = "Arquivo processado e absorvido pela I.A.!"; setTimeout(() => { statusLabel.innerText = ""; }, 4000); }
@@ -921,15 +990,13 @@ app.chamarGemini = async function(prompt) {
     if(!app.API_KEY_GEMINI) { app.showToast("Chave da API do Google Gemini não encontrada.", "error"); return "Erro: Google Gemini API Key ausente."; }
     try {
         // MODELO ATUALIZADO PARA GEMINI 2.0 FLASH
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${app.API_KEY_GEMINI}`, { 
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) 
-        });
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${app.API_KEY_GEMINI}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
         const data = await response.json(); if(data.error) throw new Error(data.error.message); return data.candidates[0].content.parts[0].text;
     } catch(e) { console.error("Erro Gemini:", e); return "Falha de conexão com a IA."; }
 };
 
-app.perguntarJarvis = async function() {    const input = document.getElementById('jarvisInput'); const respDiv = document.getElementById('jarvisResposta');
+app.perguntarJarvis = async function() {
+    const input = document.getElementById('jarvisInput'); const respDiv = document.getElementById('jarvisResposta');
     if(!input || !input.value) return;
     if(respDiv) { respDiv.classList.remove('d-none'); respDiv.innerHTML = '<span class="spinner-border text-info spinner-border-sm me-2"></span> J.A.R.V.I.S analisando os dados...'; }
     
