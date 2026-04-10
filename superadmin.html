@@ -94,12 +94,32 @@
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 212, 255, 0.3);
         }
+        
+        /* TABELAS DARK MODE - CORRIGIDO */
         .table {
-            color: var(--text-primary);
+            --bs-table-bg: transparent !important;
+            --bs-table-striped-bg: rgba(255,255,255,0.02);
+            --bs-table-hover-bg: rgba(0, 212, 255, 0.05);
+            color: #fff !important;
+            margin-bottom: 0;
         }
-        .table thead {
-            background: rgba(0, 212, 255, 0.1);
+        .table thead th {
+            background-color: #0f172a !important;
+            color: var(--accent) !important;
+            border-bottom: 2px solid var(--accent) !important;
+            font-weight: 600;
+            padding: 15px;
         }
+        .table td, .table th {
+            border-bottom: 1px solid #334155 !important;
+            vertical-align: middle;
+            padding: 12px;
+            color: #fff !important;
+        }
+        .table tbody tr:hover {
+            background-color: rgba(0, 212, 255, 0.05) !important;
+        }
+        
         .badge {
             padding: 8px 12px;
             border-radius: 6px;
@@ -111,6 +131,20 @@
             margin-bottom: 20px;
             padding-bottom: 10px;
             border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+        }
+        .modal-content {
+            background: var(--bg-card);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+        .modal-header {
+            border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+            color: var(--accent);
+        }
+        .modal-footer {
+            border-top: 1px solid rgba(0, 212, 255, 0.3);
+        }
+        .btn-close-white {
+            filter: invert(1);
         }
     </style>
 </head>
@@ -134,27 +168,27 @@
             <div class="col-md-2 sidebar p-3">
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link active" href="#dashboard" onclick="app.mostrarSecao('dashboard')">
+                        <a class="nav-link active" href="#" onclick="app.mostrarSecao('dashboard'); return false;">
                             <i class="bi bi-speedometer2 me-2"></i>Dashboard
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#clientes" onclick="app.mostrarSecao('clientes')">
+                        <a class="nav-link" href="#" onclick="app.mostrarSecao('clientes'); return false;">
                             <i class="bi bi-building me-2"></i>Meus Clientes (Tenants)
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#financeiro" onclick="app.mostrarSecao('financeiro')">
+                        <a class="nav-link" href="#" onclick="app.mostrarSecao('financeiro'); return false;">
                             <i class="bi bi-cash-stack me-2"></i>Meu ERP Financeiro
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#onboarding" onclick="app.mostrarSecao('onboarding')">
+                        <a class="nav-link" href="#" onclick="app.mostrarSecao('onboarding'); return false;">
                             <i class="bi bi-database-fill-up me-2"></i>Carga de Dados (Onboarding)
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#projetos" onclick="app.mostrarSecao('projetos')">
+                        <a class="nav-link" href="#" onclick="app.mostrarSecao('projetos'); return false;">
                             <i class="bi bi-briefcase me-2"></i>Projetos Contratados
                         </a>
                     </li>
@@ -520,9 +554,9 @@
     <!-- Modal Financeiro -->
     <div class="modal fade" id="modalFinanceiroMaster" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content" style="background: var(--bg-card); border: 1px solid rgba(0, 212, 255, 0.3);">
-                <div class="modal-header" style="border-bottom: 1px solid rgba(0, 212, 255, 0.3);">
-                    <h5 class="modal-title text-white" id="modalFinanceiroTitulo">Lançamento Financeiro</h5>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalFinanceiroTitulo">Lançamento Financeiro</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -554,7 +588,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="modal-footer" style="border-top: 1px solid rgba(0, 212, 255, 0.3);">
+                <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="btnLancarMaster">CONFIRMAR E PROCESSAR NO CAIXA</button>
                 </div>
@@ -570,6 +604,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <!-- App Script -->
-    <script src="app_superadmin.js"></script>
+    <script src="js/app_superadmin.js"></script>
 </body>
 </html>
