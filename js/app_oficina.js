@@ -47,8 +47,7 @@ app.filtroFinDataFim = null;
 app.bancoFinFiltrado = [];
 
 // =====================================================================
-// MOTOR DE AUDITORIA GLOBAL
-// =====================================================================
+// MOTOR DE AUDITORIA GLOBAL// =====================================================================
 app.registrarAuditoriaGlobal = async function(modulo, acaoRealizada) {
     try {
         await app.db.collection('lixeira_auditoria').add({
@@ -97,8 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if(app.t_role === 'admin' || app.t_role === 'gerente') {
         app.iniciarEscutaEstoque();
-        app.iniciarEscutaFinanceiro();
-        app.iniciarEscutaValesRH();
+        app.iniciarEscutaFinanceiro();        app.iniciarEscutaValesRH();
     }
     if(app.t_role === 'admin') {
         app.iniciarEscutaLixeira();
@@ -147,8 +145,7 @@ app.iniciarEscutaValesRH = function() {
     });
 };
 
-// =====================================================================
-// TOASTS
+// =====================================================================// TOASTS
 // =====================================================================
 app.showToast = function(msg, type='success') {
     const bg = type === 'success' ? 'bg-success' : type === 'error' ? 'bg-danger' : 'bg-warning text-dark';
@@ -197,8 +194,7 @@ app.construirMenuLateral = function() {
 
 app.mostrarTela = function(id, titulo, btn) {
     document.querySelectorAll('.modulo-tela').forEach(t => t.style.display = 'none');
-    const tela = document.getElementById(id); if(tela) tela.style.display = 'block';
-    const hTitulo = document.getElementById('tituloPagina'); if(hTitulo) hTitulo.innerText = titulo;
+    const tela = document.getElementById(id); if(tela) tela.style.display = 'block';    const hTitulo = document.getElementById('tituloPagina'); if(hTitulo) hTitulo.innerText = titulo;
     if(btn) { document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
 };
 
@@ -247,8 +243,7 @@ app.abrirModalCRM = function(mode = 'nova', id = '') {
     
     if(mode === 'edit') {
         const c = app.bancoCrm.find(x => x.id === id);
-        if(c) {
-            ['crm_id','c_nome','c_tel','c_doc','c_email','c_cep','c_rua','c_num','c_bairro','c_cidade','c_user','c_pass','c_notas'].forEach(k => {
+        if(c) {            ['crm_id','c_nome','c_tel','c_doc','c_email','c_cep','c_rua','c_num','c_bairro','c_cidade','c_user','c_pass','c_notas'].forEach(k => {
                 const el = document.getElementById(k);
                 if(el) { let prop = k.replace('c_', ''); if(k==='crm_id') prop='id'; if(k==='c_doc') prop='documento'; if(k==='c_tel') prop='telefone'; if(k==='c_user') prop='usuario'; if(k==='c_pass') prop='senha'; if(k==='c_notas') prop='anotacoes'; el.value = c[prop] || ''; }
             });
@@ -297,8 +292,7 @@ app.apagarCliente = async function(id) {
     if(confirm("Apagar cliente?")) { 
         try {
             const c = app.bancoCrm.find(x => x.id === id);
-            await app.db.collection('clientes_base').doc(id).delete(); 
-            app.showToast("Cliente Removido.", "success"); 
+            await app.db.collection('clientes_base').doc(id).delete();             app.showToast("Cliente Removido.", "success"); 
             app.registrarAuditoriaGlobal("CRM", `Deletou cliente: ${c ? c.nome : id}`);
         } catch(err) {
             console.error("Erro apagar:", err);
@@ -347,8 +341,7 @@ app.enviarWhatsAppAprovacao = function() {
 // =====================================================================
 // 4. CHAT
 // =====================================================================
-app.iniciarEscutaMensagens = function() {
-    app.db.collection('mensagens').where('tenantId', '==', app.t_id).onSnapshot(snap => {
+app.iniciarEscutaMensagens = function() {    app.db.collection('mensagens').where('tenantId', '==', app.t_id).onSnapshot(snap => {
         app.bancoMensagens = snap.docs.map(d => ({id: d.id, ...d.data()}));
         app.bancoMensagens.sort((a,b) => (a.timestamp?.toMillis()||0) - (b.timestamp?.toMillis()||0));
         
@@ -397,8 +390,7 @@ app.abrirChatCRM = function(clienteId, nomeCliente) {
                 else c += `<br><img src="${x.fileUrl}" onclick="window.open('${x.fileUrl}')" style="max-width:100%; border-radius:8px; cursor:pointer; margin-top:5px;">`;
             }
             area.innerHTML += `<div class="message ${x.sender === 'admin' ? 'admin shadow-sm' : 'cliente shadow-sm'}">${c}<small class="d-block text-end mt-1" style="font-size:0.7rem;opacity:0.7;">${t}</small></div>`;
-        });
-        area.scrollTop = area.scrollHeight;
+        });        area.scrollTop = area.scrollHeight;
     }
 };
 
@@ -447,7 +439,6 @@ app.iniciarEscutaMensagensInternas = function() {
         }
     });
 };
-
 app.enviarMensagemInterna = async function() {
     const inp = document.getElementById('inputChatInterno'); if(!inp || !inp.value.trim()) return;
     try {
@@ -497,8 +488,7 @@ app.abrirModalNF = function(mode='nova', id='') {
 };
 
 app.processarXML = function(event) {
-    const file = event.target.files[0]; if(!file) return;
-    const reader = new FileReader();
+    const file = event.target.files[0]; if(!file) return;    const reader = new FileReader();
     reader.onload = function(e) {
         try {
             const xmlDoc = new DOMParser().parseFromString(e.target.result, "text/xml");
@@ -547,7 +537,6 @@ app.verificarPgtoCompraNF = function() {
     const f = document.getElementById('nf_metodo_pagamento')?.value || ''; const d = document.getElementById('nf_div_parcelas');
     if(d) { if(f.includes('Parcelado') || f.includes('Prazo')) d.style.display = 'block'; else { d.style.display = 'none'; document.getElementById('nf_parcelas').value = "1x"; } }
 };
-
 app.salvarEntradaEstoque = async function(e) {
     e.preventDefault();
     const id = document.getElementById('p_id').value; 
@@ -597,8 +586,7 @@ app.salvarEntradaEstoque = async function(e) {
         await batch.commit(); app.showToast("Estoque Atualizado!", "success"); e.target.reset(); bootstrap.Modal.getInstance(document.getElementById('modalNF')).hide();
     } catch(err) {
         console.error("Erro estoque:", err);
-        app.showToast("Erro: " + err.message, "error");
-    }
+        app.showToast("Erro: " + err.message, "error");    }
 };
 
 app.apagarProduto = async function(id) {
@@ -647,8 +635,7 @@ app.renderizarKanban = function() {
     let ativos = app.bancoOSCompleto.filter(os => os.status !== 'entregue');
     if(t) ativos = ativos.filter(os => (os.placa&&os.placa.toLowerCase().includes(t)) || (os.cliente&&os.cliente.toLowerCase().includes(t)) || (os.veiculo&&os.veiculo.toLowerCase().includes(t)));
 
-    const cols = { patio: '', orcamento: '', aprovacao: '', box: '', pronto: '' }; 
-    let counts = { patio: 0, orcamento: 0, aprovacao: 0, box: 0, pronto: 0 }; 
+    const cols = { patio: '', orcamento: '', aprovacao: '', box: '', pronto: '' };     let counts = { patio: 0, orcamento: 0, aprovacao: 0, box: 0, pronto: 0 }; 
     const ordem = ['patio', 'orcamento', 'aprovacao', 'box', 'pronto'];
 
     ativos.forEach(os => {
@@ -670,7 +657,7 @@ app.mudarStatusRapido = async function(id, novoStatus) {
     if (novoStatus === 'box') return app.iniciarAtribuicaoBox(id);
     try {
         const osRef = app.db.collection('ordens_servico').doc(id); const doc = await osRef.get(); let h = doc.data().historico || [];
-        h.push({ data: new Date().toISOString(), usuario: app.user_nome, acao: `Moveu para: ${novoStatus.toUpperCase()}` });
+        h.push({  new Date().toISOString(), usuario: app.user_nome, acao: `Moveu para: ${novoStatus.toUpperCase()}` });
         await osRef.update({ status: novoStatus, historico: h, ultimaAtualizacao: new Date().toISOString() });
         if (novoStatus === 'pronto') app.abrirModalNotificacaoWhatsApp(id, 'pronto');
     } catch(err) {
@@ -697,8 +684,7 @@ app.confirmarAtribuicaoBox = async function() {
     try {
         const osRef = app.db.collection('ordens_servico').doc(id); const doc = await osRef.get(); let h = doc.data().historico || [];
         h.push({  new Date().toISOString(), usuario: app.user_nome, acao: `Aprovado. [${box}] equipe: [${mecanicosStr}]. Status: BOX` });
-        await osRef.update({ status: 'box', mecanicoAtribuido: mecanicosStr, boxAtribuido: box, historico: h, ultimaAtualizacao: new Date().toISOString() });
-        app.showToast("Para Box!", "success"); bootstrap.Modal.getInstance(document.getElementById('modalAtribuicaoBox')).hide();
+        await osRef.update({ status: 'box', mecanicoAtribuido: mecanicosStr, boxAtribuido: box, historico: h, ultimaAtualizacao: new Date().toISOString() });        app.showToast("Para Box!", "success"); bootstrap.Modal.getInstance(document.getElementById('modalAtribuicaoBox')).hide();
     } catch(err) {
         console.error("Erro atribuição:", err);
         app.showToast("Erro: " + err.message, "error");
@@ -747,8 +733,7 @@ app.abrirModalOS = function(mode = 'nova', id = '') {
             ['os_veiculo','os_cliente','os_cliente_cpf','os_celular','os_status','os_relato_cliente','os_diagnostico'].forEach(k => { if(document.getElementById(k)) document.getElementById(k).value = os[k.replace('os_','')] || (k==='os_status'?'patio':(k==='os_cliente_cpf'?os.clienteCpf:'')); });
             ['chk_combustivel','chk_arranhado','chk_bateria','chk_pneus'].forEach(k => { if(os[k] && document.getElementById(k)) document.getElementById(k).checked = true; });
             if (os.fotos) { app.fotosOSAtual = os.fotos; app.renderizarGaleria(); }
-            if (os.historico) { app.historicoOSAtual = os.historico; app.renderizarHistorico(); }
-            if (os.pecas) { os.pecas.forEach(p => app.adicionarLinhaPeca(p.desc, p.ncm||'', p.qtd, p.custo, p.venda, p.idEstoque, p.isMaoObra)); }
+            if (os.historico) { app.historicoOSAtual = os.historico; app.renderizarHistorico(); }            if (os.pecas) { os.pecas.forEach(p => app.adicionarLinhaPeca(p.desc, p.ncm||'', p.qtd, p.custo, p.venda, p.idEstoque, p.isMaoObra)); }
             
             document.getElementById('btnGerarPDF')?.classList.remove('d-none');
             if (os.status === 'pronto' && (app.t_role === 'admin' || app.t_role === 'gerente')) document.getElementById('btnFaturar')?.classList.remove('d-none');
@@ -797,8 +782,7 @@ app.salvarOS = async function() {
             if (desc !== '') { pecasArray.push({ desc, qtd: parseFloat(tr.querySelector('.peca-qtd').value)||1, custo: parseFloat(tr.querySelector('.peca-custo').value)||0, venda: parseFloat(tr.querySelector('.peca-venda').value)||0, idEstoque: descInput.dataset.idestoque || null, isMaoObra: descInput.dataset.maoobra === "true" }); }
         });
         
-        const novoStatus = document.getElementById('os_status').value;
-        if(novoStatus === 'box' && id) { const oldData = app.bancoOSCompleto.find(o => o.id === id); if(oldData && oldData.status !== 'box' && !oldData.mecanicoAtribuido) return app.iniciarAtribuicaoBox(id); }
+        const novoStatus = document.getElementById('os_status').value;        if(novoStatus === 'box' && id) { const oldData = app.bancoOSCompleto.find(o => o.id === id); if(oldData && oldData.status !== 'box' && !oldData.mecanicoAtribuido) return app.iniciarAtribuicaoBox(id); }
 
         app.historicoOSAtual.push({  new Date().toISOString(), usuario: app.user_nome, acao: id ? `Editou O.S. Status: ${novoStatus.toUpperCase()}` : "Abriu Ficha." });
         
@@ -847,8 +831,7 @@ app.processarFaturamentoCompleto = async function() {
                 totalParcelas: nP, 
                 metodo: fp, 
                 vencimento: dV.toISOString().split('T')[0], 
-                status: stsPgto,
-                origem: "OS",
+                status: stsPgto,                origem: "OS",
                 referenciaId: app.osParaFaturar.id,
                 pessoaId: app.osParaFaturar.clienteId || null,
                 pessoaNome: app.osParaFaturar.cliente || null,
@@ -879,7 +862,7 @@ app.processarFaturamentoCompleto = async function() {
                         let fDocComissao = {
                             tenantId: app.t_id, tipo: 'SAIDA', categoria: 'COMISSAO', desc: `Comissão O.S: [${app.osParaFaturar.placa}]`,
                             valor: totalMec, parcelaAtual: 1, totalParcelas: 1, metodo: 'Dinheiro', vencimento: dtBase, status: 'pendente', 
-                            pessoaId: func.id, pessoaNome: func.nome, origem: 'OS', referenciaId: app.osParaFaturar.id,  new Date().toISOString()
+                            pessoaId: func.id, pessoaNome: func.nome, origem: 'OS', referenciaId: app.osParaFaturar.id, data: new Date().toISOString()
                         };
                         batch.set(app.db.collection('financeiro').doc(), fDocComissao);
                     }
@@ -887,7 +870,7 @@ app.processarFaturamentoCompleto = async function() {
             });
         }
         
-        let h = app.osParaFaturar.historico || []; h.push({ data: new Date().toISOString(), usuario: app.user_nome, acao: `FATURAMENTO CONCLUÍDO.` });
+        let h = app.osParaFaturar.historico || []; h.push({  new Date().toISOString(), usuario: app.user_nome, acao: `FATURAMENTO CONCLUÍDO.` });
         batch.update(app.db.collection('ordens_servico').doc(app.osParaFaturar.id), { status: 'entregue', baixaEstoqueFeita: true, comissaoProcessada: somaComissaoGlobal, comissoesDetalhadas: comissoesDetalhadas, historico: h, ultimaAtualizacao: new Date().toISOString() });
         
         await batch.commit(); app.registrarAuditoriaGlobal("Faturamento", `Faturou ${app.osParaFaturar.placa}.`);
@@ -897,8 +880,7 @@ app.processarFaturamentoCompleto = async function() {
     } catch(err) {
         console.error("Erro faturamento:", err);
         app.showToast("Erro: " + err.message, "error");
-    }
-};
+    }};
 
 // =====================================================================
 // 9. FINANCEIRO
@@ -947,8 +929,7 @@ app.salvarLancamentoFinanceiro = async function(e) {
         const tipoPadrao = tipoBruto === 'receita' ? 'ENTRADA' : 'SAIDA';
 
         if(id) {
-            const m = prompt("JUSTIFICATIVA:"); if(!m || m.trim() === '') return app.showToast("Justificativa obrigatória.", "error");
-            const sts = document.getElementById('fin_status').value;
+            const m = prompt("JUSTIFICATIVA:"); if(!m || m.trim() === '') return app.showToast("Justificativa obrigatória.", "error");            const sts = document.getElementById('fin_status').value;
             await app.db.collection('financeiro').doc(id).update({ desc: desc, valor: valorTotal, vencimento: dataInicial.toISOString().split('T')[0], metodo: fp, status: sts, categoria: categoria, pessoaId: pessoaId, pessoaNome: pessoaNome, dataAtualizacao: new Date().toISOString() });
             app.showToast(`Atualizado.`, "success"); app.registrarAuditoriaGlobal("Financeiro", `Editou. Motivo: ${m}`);
         } else {
@@ -957,7 +938,7 @@ app.salvarLancamentoFinanceiro = async function(e) {
 
             for(let i=0; i<nP; i++) {
                 let v = new Date(dataInicial); if(nP>1 || stsPgto==='pendente') v.setMonth(v.getMonth() + i);
-                let fDoc = { tenantId: app.t_id, tipo: tipoPadrao, categoria: categoria, desc: nP>1 ? `${desc} - Parc ${i+1}/${nP}`: desc, valor: vP, parcelaAtual: i+1, totalParcelas: nP, metodo: fp, vencimento: v.toISOString().split('T')[0], status: stsPgto, pessoaId: pessoaId, pessoaNome: pessoaNome, origem: "MANUAL", referenciaId: null,  new Date().toISOString() };
+                let fDoc = { tenantId: app.t_id, tipo: tipoPadrao, categoria: categoria, desc: nP>1 ? `${desc} - Parc ${i+1}/${nP}`: desc, valor: vP, parcelaAtual: i+1, totalParcelas: nP, metodo: fp, vencimento: v.toISOString().split('T')[0], status: stsPgto, pessoaId: pessoaId, pessoaNome: pessoaNome, origem: "MANUAL", referenciaId: null, data: new Date().toISOString() };
                 batch.set(app.db.collection('financeiro').doc(), fDoc);
             }
             
@@ -998,7 +979,6 @@ app.renderizarFinanceiroGeral = function() {
 
     document.getElementById('tabelaPagarCorpo').innerHTML = hPagar || '<tr><td colspan="7" class="text-center text-white-50 py-5">Sem dívidas.</td></tr>';
     document.getElementById('tabelaReceberCorpo').innerHTML = hReceber || '<tr><td colspan="7" class="text-center text-white-50 py-5">Sem faturamento.</td></tr>';
-
     let totCom = 0;
     app.bancoOSCompleto.filter(o=>o.status==='entregue').forEach(o => {
         if(app.filtroFinDataInicio && app.filtroFinDataFim) { const dV = new Date(o.ultimaAtualizacao); const d1 = new Date(app.filtroFinDataInicio); const d2 = new Date(app.filtroFinDataFim); if(dV >= d1 && dV <= d2) totCom += (o.comissaoProcessada||0); } else { totCom += (o.comissaoProcessada||0); }
@@ -1047,8 +1027,7 @@ app.confirmarValeRH = async function(e) {
     e.preventDefault(); try { const idFunc = document.getElementById('vale_id_func').value; const nomeFunc = document.getElementById('vale_nome_func').value; const valor = parseFloat(document.getElementById('vale_valor').value); const motivo = document.getElementById('vale_motivo').value;
     if (valor <= 0) return app.showToast("Valor inválido.", "error");
     const batch = app.db.batch(); const dataH = new Date().toISOString();
-    batch.set(app.db.collection('vales_rh').doc(), { tenantId: app.t_id, idFuncionario: idFunc, nomeFuncionario: nomeFunc, valor: valor, motivo: motivo, categoria: 'VALE', dataRealizacao: dataH, responsavel: app.user_nome });
-    batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: 'SAIDA', categoria: 'VALE', desc: `[VALE] ${nomeFunc} - ${motivo}`, valor: valor, parcelaAtual: 1, totalParcelas: 1, metodo: 'Dinheiro', vencimento: dataH.split('T')[0], status: 'pago', pessoaId: idFunc, pessoaNome: nomeFunc, origem: 'MANUAL', referenciaId: null,  dataH });
+    batch.set(app.db.collection('vales_rh').doc(), { tenantId: app.t_id, idFuncionario: idFunc, nomeFuncionario: nomeFunc, valor: valor, motivo: motivo, categoria: 'VALE', dataRealizacao: dataH, responsavel: app.user_nome });    batch.set(app.db.collection('financeiro').doc(), { tenantId: app.t_id, tipo: 'SAIDA', categoria: 'VALE', desc: `[VALE] ${nomeFunc} - ${motivo}`, valor: valor, parcelaAtual: 1, totalParcelas: 1, metodo: 'Dinheiro', vencimento: dataH.split('T')[0], status: 'pago', pessoaId: idFunc, pessoaNome: nomeFunc, origem: 'MANUAL', referenciaId: null, data: dataH });
     await batch.commit(); app.showToast("Vale lançado.", "success"); bootstrap.Modal.getInstance(document.getElementById('modalValeRH')).hide(); } catch(err) { console.error("Erro:", err); app.showToast("Erro: " + err.message, "error"); }
 };
 
@@ -1097,8 +1076,7 @@ app.exportarPDFMenechelli = async function() {
         const { jsPDF } = window.jspdf; const doc = new jsPDF('p', 'mm', 'a4'); const w = doc.internal.pageSize.getWidth(); let y = 15;
         doc.setFillColor(30, 41, 59); doc.rect(0, 0, w, 40, 'F'); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(26); doc.text(app.t_nome.toUpperCase(), w/2, 22, { align: "center" }); doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(`LAUDO`, w/2, 30, { align: "center" }); y = 50; doc.setTextColor(0, 0, 0);
         doc.setDrawColor(200, 200, 200); doc.rect(15, y, w-30, 25); doc.setFont("helvetica", "bold"); doc.text(`Cliente:`, 20, y+8); doc.setFont("helvetica", "normal"); doc.text(document.getElementById('os_cliente').value, 50, y+8); doc.setFont("helvetica", "bold"); doc.text(`Tel:`, 130, y+8); doc.setFont("helvetica", "normal"); doc.text(document.getElementById('os_celular').value, 150, y+8); doc.setFont("helvetica", "bold"); doc.text(`Placa:`, 20, y+18); doc.setFont("helvetica", "normal"); doc.text(placa, 60, y+18); doc.setFont("helvetica", "bold"); doc.text(`Veículo:`, 130, y+18); doc.setFont("helvetica", "normal"); doc.text(document.getElementById('os_veiculo').value, 148, y+18); y += 35;
-        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(`QUEIXA`, 15, y); doc.line(15, y+2, w-15, y+2); y += 10; doc.setFont("helvetica", "normal"); doc.setFontSize(10); const txtQ = doc.splitTextToSize(document.getElementById('os_relato_cliente').value, w - 30); doc.text(txtQ, 15, y); y += (txtQ.length * 6) + 10;
-        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(`DIAGNÓSTICO`, 15, y); doc.line(15, y+2, w-15, y+2); y += 10; doc.setFont("helvetica", "normal"); doc.setFontSize(10); const txtL = doc.splitTextToSize(document.getElementById('os_diagnostico').value, w - 30); doc.text(txtL, 15, y); y += (txtL.length * 6) + 10;
+        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(`QUEIXA`, 15, y); doc.line(15, y+2, w-15, y+2); y += 10; doc.setFont("helvetica", "normal"); doc.setFontSize(10); const txtQ = doc.splitTextToSize(document.getElementById('os_relato_cliente').value, w - 30); doc.text(txtQ, 15, y); y += (txtQ.length * 6) + 10;        doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text(`DIAGNÓSTICO`, 15, y); doc.line(15, y+2, w-15, y+2); y += 10; doc.setFont("helvetica", "normal"); doc.setFontSize(10); const txtL = doc.splitTextToSize(document.getElementById('os_diagnostico').value, w - 30); doc.text(txtL, 15, y); y += (txtL.length * 6) + 10;
         let tB = []; document.querySelectorAll('#listaPecasCorpo tr').forEach(tr => { tB.push([tr.querySelector('.peca-desc').value, tr.querySelector('.peca-qtd').value, `R$ ${tr.querySelector('.peca-venda').value}`, `R$ ${tr.querySelector('.peca-total').value}`]); });
         doc.autoTable({ startY: y, head: [['Serviço/Peça', 'Qtd', 'Vlr. Unit', 'Subtotal']], body: tB, theme: 'grid' }); y = doc.lastAutoTable.finalY + 15;
         if (app.fotosOSAtual.length > 0) { if (y > 220) { doc.addPage(); y = 20; } doc.setFont("helvetica", "bold"); doc.text(`FOTOS`, 15, y); doc.line(15, y+2, w-15, y+2); y += 10; let iX = 15; let iY = y; for (let i = 0; i < app.fotosOSAtual.length; i++) { const b64 = await carregarImagemBase64(app.fotosOSAtual[i]); if(!b64) continue; if (iX + 45 > w - 15) { iX = 15; iY += 53; } if (iY + 45 > 280) { doc.addPage(); iY = 20; iX = 15; } doc.addImage(b64, 'JPEG', iX, iY, 45, 45); iX += 53; } y = iY + 60; }
@@ -1147,7 +1125,6 @@ app.iniciarEscutaIA = function() {
         if(app.renderizarListaIA) app.renderizarListaIA();
     });
 };
-
 app.renderizarListaIA = function() {
     const div = document.getElementById('listaConhecimentosIA'); if(!div) return;
     div.innerHTML = app.bancoIA.length === 0 ? '<p class="text-white-50">RAG vazio.</p>' : app.bancoIA.map(ia => `<div class="d-flex justify-content-between align-items-center bg-dark p-3 mb-2 border border-secondary rounded"><span class="text-white-50 text-truncate" style="max-width: 85%;">${ia.texto}</span><button class="btn btn-sm btn-outline-danger border-0" onclick="app.apagarConhecimentoIA('${ia.id}')"><i class="bi bi-trash-fill"></i></button></div>`).join('');
@@ -1197,8 +1174,7 @@ app.chamarGemini = async function(promptCompleto) {
     if (!app.minhaGeminiKey) {
         console.log("[IA] Buscando chave...");
         await app.carregarGeminiKey();
-        if (!app.minhaGeminiKey) { 
-            console.error("[IA] Chave não encontrada"); 
+        if (!app.minhaGeminiKey) {             console.error("[IA] Chave não encontrada"); 
             app.showToast("Erro IA: Chave API não configurada", "error");
             return "Erro: Chave API não configurada"; 
         }
@@ -1247,8 +1223,7 @@ app.perguntarJarvis = async function() {
     if(!app.minhaGeminiKey) return app.showToast("IA não configurada.", "error");
 
     app.iaTrabalhando = true; 
-    if(resDiv) {
-        resDiv.classList.remove('d-none'); 
+    if(resDiv) {        resDiv.classList.remove('d-none'); 
         resDiv.innerHTML = '<span class="spinner-border text-info spinner-border-sm me-2"></span> Processando...';
     }
     
@@ -1293,3 +1268,5 @@ app.jarvisAnalisarRevisoes = async function() {
         app.iaTrabalhando = false; 
     }
 };
+
+console.log("🚀 app_oficina.js carregado com sucesso!");
