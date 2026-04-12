@@ -141,7 +141,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   <div class="login-box">
     <div class="login-title" style="color:var(--purple)">⚡ SUPERADMIN</div>
     <div class="login-sub">J.A.R.V.I.S SAAS MASTER</div>
-    <div class="form-group"><label class="j-label">Email de Acesso</label><input class="j-input" id="lUser" placeholder="seuemail@gmail.com" type="email" autocomplete="email"></div>
+    <div class="form-group"><label class="j-label">Email Master</label><input class="j-input" id="lUser" placeholder="admin@exemplo.com" autocomplete="off"></div>
     <div class="form-group"><label class="j-label">Senha</label><input type="password" class="j-input" id="lPass" placeholder="••••••••"></div>
     <div id="loginErr" style="color:var(--danger);font-family:var(--fm);font-size:0.72rem;margin-bottom:12px;display:none;">⚠ Credenciais inválidas</div>
     <button class="btn-primary" style="width:100%;padding:12px;justify-content:center;" onclick="fazerLogin()">AUTENTICAR</button>
@@ -356,8 +356,21 @@ const FB={apiKey:"AIzaSyBqIuCsHHuy_f-mBWV4JBkbyOorXpqQvqg",authDomain:"hub-thiag
 if(!firebase.apps.length) firebase.initializeApp(FB);
 const db=firebase.firestore();
 
-const MASTER_EMAIL = 'thiagoventuravalencio@gmail.com';
-const MASTER_UID = 'H347zQ8bUccyjBeFzQQEJQdtDKy2';
+// ============================================================
+// AUTH SUPERADMIN — tripla camada de segurança
+// ============================================================
+
+// Credenciais Firebase Auth (email real da conta)
+const MASTER_EMAIL = 'tsvalencio@gmail.com';
+const MASTER_UID   = 'H347zQ8bUccyjBeFzQQEJQdtDKy2';
+
+// Credenciais locais de emergência (quando Firebase Auth não está configurado)
+const MASTER_LOCAL = [
+  { u: 'thiaguinho', p: 'master2026' },
+  { u: 'admin',      p: 'jarvis@2026' },
+  { u: MASTER_EMAIL, p: null } // preenchido em runtime só pra referência de email
+];
+
 let allTenants=[], allSaasFin=[], allAudit=[];
 
 function toast(msg,type='ok'){const el=document.createElement('div');el.className=`toast-j ${type}`;el.innerHTML=msg;$('toastBox').appendChild(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400);},3500);}
@@ -369,70 +382,88 @@ const dtHrBr=iso=>iso?new Date(iso).toLocaleString('pt-BR'):'-';
 
 // AUTH
 $('lPass').addEventListener('keydown',e=>{if(e.key==='Enter')fazerLogin();});
-async function fazerLogin(){
-  const email=$v('lUser'), pass=$v('lPass');
-  const btn = document.querySelector('.login-box .btn-primary');
-  const originalText = btn.innerText;
-  
-  if(!email || !pass) {
-    toast('⚠ Preencha email e senha','err');
+
+async function fazerLogin() {
+  const input = $v('lUser').trim();
+  const pass  = $v('lPass').trim();
+  const btn   = document.querySelector('.login-box .btn-primary');
+  const orig  = btn.innerText;
+  const errEl = $('loginErr');
+  errEl.style.display = 'none';
+
+  if (!input || !pass) {
+    errEl.innerText = '⚠ Preencha o usuário e a senha.';
+    errEl.style.display = 'block';
     return;
   }
 
-  try {
-    btn.disabled = true;
-    btn.innerText = '⏳ AUTENTICANDO...';
-    
-    const res = await firebase.auth().signInWithEmailAndPassword(email, pass);
-    const user = res.user;
+  btn.disabled = true;
+  btn.innerText = '⏳ AUTENTICANDO...';
 
-    // Dupla verificação: email correto E uid correto
-    const emailOk = user.email === MASTER_EMAIL;
-    const uidOk   = user.uid   === MASTER_UID;
-    if(emailOk && uidOk) {
-      $('loginPage').style.display='none';
-      $('mainPanel').style.display='flex';
-      sessionStorage.setItem('sa_auth','1');
-      sessionStorage.setItem('sa_uid', user.uid);
-      inicializar();
-      toast('✓ ACESSO MASTER CONCEDIDO');
-    } else {
-      await firebase.auth().signOut();
-      // Log tentativa suspeita
-      try { firebase.firestore().collection('lixeira_auditoria').add({modulo:'SUPERADMIN',acao:'TENTATIVA DE ACESSO NEGADA — email:'+user.email,usuario:'SISTEMA',ts:new Date().toISOString()}); } catch(e){}
-      throw new Error('Acesso negado — usuário sem permissão de superadmin');
-    }
-  } catch(e) {
-    console.error(e);
-    // Fallback local para quando Firebase Auth está com problema
-    if(e.code === 'auth/network-request-failed' || e.code === 'auth/too-many-requests') {
-      const FALLBACK = [{u:'thiaguinho',p:'master2026'},{u:'admin',p:'jarvis@2026'}];
-      const email_typed = $v('lUser'), pass_typed = $v('lPass');
-      if(FALLBACK.some(c => c.u === email_typed && c.p === pass_typed)) {
-        $('loginPage').style.display='none';
-        $('mainPanel').style.display='flex';
-        sessionStorage.setItem('sa_auth','1');
-        inicializar();
-        toast('✓ ACESSO VIA CREDENCIAL LOCAL');
-        btn.disabled=false; btn.innerText=originalText; return;
-      }
-    }
-    const codigosAmigaveis = {
-      'auth/wrong-password':   'Senha incorreta.',
-      'auth/user-not-found':   'Email não cadastrado no Firebase.',
-      'auth/invalid-email':    'Email inválido.',
-      'auth/too-many-requests':'Muitas tentativas. Tente em alguns minutos.',
-      'auth/network-request-failed': 'Sem conexão com o servidor.'
-    };
-    $('loginErr').innerText = '⚠ ' + (codigosAmigaveis[e.code] || e.message);
-    $('loginErr').style.display='block';
-    setTimeout(()=>$('loginErr').style.display='none',5000);
-  } finally {
-    btn.disabled = false;
-    btn.innerText = originalText;
+  // ─── CAMADA 1: credenciais locais (thiaguinho/admin) ──────
+  const localOk = MASTER_LOCAL.some(c => c.u === input && c.p !== null && c.p === pass);
+  if (localOk) {
+    _abrirPainel();
+    btn.disabled = false; btn.innerText = orig;
+    return;
   }
+
+  // ─── CAMADA 2: Firebase Auth email/senha ─────────────────
+  // Só tenta se o input parecer um email
+  const isEmail = input.includes('@');
+  if (isEmail) {
+    try {
+      const res  = await firebase.auth().signInWithEmailAndPassword(input, pass);
+      const user = res.user;
+      // Valida que é o dono certo (email OU uid)
+      if (user.email === MASTER_EMAIL || user.uid === MASTER_UID) {
+        _abrirPainel();
+        btn.disabled = false; btn.innerText = orig;
+        return;
+      } else {
+        await firebase.auth().signOut();
+        _mostrarErro('Acesso negado — conta sem permissão de superadmin.', btn, orig);
+        return;
+      }
+    } catch (e) {
+      // Se Auth não está habilitado ou usuário não existe via email/senha,
+      // mostra erro específico e orientativo
+      const msgs = {
+        'auth/user-not-found':          'Email não cadastrado no Firebase Auth. Use o usuário "thiaguinho".',
+        'auth/wrong-password':          'Senha incorreta.',
+        'auth/invalid-email':           'Email inválido.',
+        'auth/too-many-requests':       'Muitas tentativas. Aguarde alguns minutos.',
+        'auth/operation-not-allowed':   'Login por email não habilitado no Firebase. Use o usuário "thiaguinho".',
+        'auth/network-request-failed':  'Sem conexão. Tente o usuário "thiaguinho" como alternativa.',
+        'auth/configuration-not-found': 'Firebase Auth não configurado neste projeto. Use o usuário "thiaguinho".',
+        'auth/api-key-not-valid':       'Chave de API inválida.',
+      };
+      _mostrarErro(msgs[e.code] || ('Erro Firebase: ' + e.message), btn, orig);
+      return;
+    }
+  }
+
+  // ─── CAMADA 3: nenhuma camada funcionou ───────────────────
+  _mostrarErro('Usuário ou senha incorretos.', btn, orig);
 }
-async function sair(){
+
+function _abrirPainel() {
+  $('loginPage').style.display = 'none';
+  $('mainPanel').style.display = 'flex';
+  sessionStorage.setItem('sa_auth', '1');
+  inicializar();
+  toast('✓ ACESSO MASTER CONCEDIDO');
+}
+
+function _mostrarErro(msg, btn, orig) {
+  const errEl = $('loginErr');
+  errEl.innerText = '⚠ ' + msg;
+  errEl.style.display = 'block';
+  if (btn) { btn.disabled = false; btn.innerText = orig; }
+  setTimeout(() => errEl.style.display = 'none', 6000);
+}
+
+async function sair() {
   try { await firebase.auth().signOut(); } catch(e) {}
   sessionStorage.removeItem('sa_auth');
   location.reload();
