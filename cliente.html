@@ -55,7 +55,7 @@ body { overflow-y: auto; background: #060A14; color: #E8F4FF; font-family: 'Exo 
 .btn-outline { background: transparent; border: 1px solid var(--brand); color: var(--brand); }
 .btn-danger { background: var(--danger-dim); border: 1px solid var(--danger); color: var(--danger); }
 
-.os-card { background: var(--surf-1); border: 1px solid var(--border); border-radius: var(--r-xl); overflow: hidden; margin-bottom: 20px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+.os-card { background: var(--surf-1); border: 1px solid var(--border); border-radius: var(--r-xl); overflow: hidden; margin-bottom: 20px; box-shadow: 0 8px 25px rgba(0,0,0,0.3); transition: 0.3s; }
 .os-header-premium { padding: 20px; background: linear-gradient(to bottom right, var(--surf-2), var(--surf-1)); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; }
 .placa-mercosul { display: inline-block; background: #fff; border: 1px solid #ccc; border-radius: 4px; overflow: hidden; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
 .placa-mercosul-top { background: #003399; color: #fff; font-family: sans-serif; font-size: 0.5rem; font-weight: 700; padding: 2px 0; text-transform: uppercase; letter-spacing: 1px; }
@@ -79,20 +79,26 @@ body { overflow-y: auto; background: #060A14; color: #E8F4FF; font-family: 'Exo 
 .alerta-orcamento { margin: 20px; padding: 20px; background: linear-gradient(135deg, var(--warn-dim), transparent); border-left: 4px solid var(--warn); border-radius: 0 var(--r-md) var(--r-md) 0; }
 .badge-historico { margin: 0 20px 20px; padding: 12px; background: rgba(0, 212, 255, 0.05); border: 1px dashed var(--brand); border-radius: var(--r-md); text-align: center; font-family: var(--ff-mono); font-size: 0.8rem; color: var(--brand); }
 
-.os-details { display: none; padding: 20px; background: rgba(0,0,0,0.2); }
-.os-card.expanded .os-details { display: block; }
-.btn-toggle-detalhes { width: 100%; padding: 14px; background: transparent; border: none; color: var(--text-muted); font-family: var(--ff-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.btn-toggle-detalhes:hover { color: var(--brand); background: var(--surf-2); }
+.os-details { display: none; padding: 24px; background: rgba(0,0,0,0.25); border-top: 1px solid var(--border); }
+.os-card.expanded .os-details { display: block; animation: fadeIn 0.4s ease; }
+.btn-toggle-detalhes { width: 100%; padding: 16px; background: var(--surf-1); border: none; color: var(--brand); font-family: var(--ff-mono); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-toggle-detalhes:hover { background: var(--surf-2); }
 .detalhe-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; }
 .detalhe-row:last-child { border-bottom: none; }
 .detalhe-valor { font-family: var(--ff-mono); font-weight: 700; }
 
-.timeline-box { margin-top: 20px; padding: 20px; background: var(--surf-2); border-radius: var(--r-md); border: 1px solid var(--border); }
-.timeline { padding-left: 14px; border-left: 2px solid var(--border); }
-.tl-item { padding: 0 0 16px 16px; position: relative; }
-.tl-item::before { content: ''; position: absolute; left: -21px; top: 4px; width: 12px; height: 12px; background: var(--brand); border: 2px solid var(--surf-2); border-radius: 50%; box-shadow: 0 0 8px var(--brand-dim); }
-.tl-date { font-family: var(--ff-mono); font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 1px; }
-.tl-action { font-size: 0.9rem; color: var(--text-primary); line-height: 1.4; }
+/* HISTÓRICO DE AUDITORIA PREMIUM (QUEM, QUANDO, O QUÊ) */
+.timeline-box { margin-top: 24px; padding: 24px; background: linear-gradient(145deg, var(--surf-2), var(--surf-1)); border-radius: var(--r-xl); border: 1px solid var(--border); box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
+.timeline-box-title { font-family: var(--ff-display); font-size: 1.2rem; font-weight: 700; color: white; margin-bottom: 20px; display:flex; align-items:center; gap:8px; }
+.timeline { padding-left: 18px; border-left: 2px dashed var(--border); }
+.tl-item { padding: 0 0 24px 24px; position: relative; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-item::before { content: ''; position: absolute; left: -9px; top: 0; width: 14px; height: 14px; background: var(--surf-1); border: 2px solid var(--brand); border-radius: 50%; box-shadow: 0 0 10px var(--brand-dim); z-index: 2; transition: 0.3s; }
+.tl-item:hover::before { background: var(--brand); transform: scale(1.2); }
+.tl-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.tl-date { font-family: var(--ff-mono); font-size: 0.65rem; color: var(--text-muted); padding: 4px 10px; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+.tl-user { font-family: var(--ff-mono); font-size: 0.7rem; font-weight: 700; color: var(--brand); letter-spacing: 1px; text-transform: uppercase; background: var(--brand-dim); padding: 4px 10px; border-radius: 12px; }
+.tl-action { font-size: 0.9rem; color: var(--text-primary); line-height: 1.5; background: rgba(0,0,0,0.2); padding: 14px; border-radius: var(--r-md); border-left: 3px solid var(--brand-dim); }
 
 .media-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; margin-top: 12px; }
 .media-item { aspect-ratio: 1; border-radius: var(--r-md); overflow: hidden; background: #000; border: 1px solid var(--border); position: relative; cursor: zoom-in; }
@@ -214,7 +220,7 @@ body { overflow-y: auto; background: #060A14; color: #E8F4FF; font-family: 'Exo 
           <div style="font-size:1.5rem;">🤖</div>
           <div>
             <div style="font-family:var(--ff-display);font-size:1.1rem;font-weight:700;color:white;">thIAguinho</div>
-            <div style="font-family:var(--ff-mono);font-size:0.6rem;color:#A78BFA;letter-spacing:1px;">ASSISTENTE AUTOMOTIVO IA</div>
+            <div style="font-family:var(--ff-mono);font-size:0.6rem;color:#A78BFA;letter-spacing:1px;">ASSISTENTE DE TRIAGEM AUTOMOTIVA</div>
           </div>
         </div>
         <div style="padding:10px 14px;border-bottom:1px solid rgba(167,139,250,0.1);display:flex;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,0.1);">
@@ -223,10 +229,10 @@ body { overflow-y: auto; background: #060A14; color: #E8F4FF; font-family: 'Exo 
           <span onclick="iaChip('Explique os erros do meu veículo')" style="padding:6px 12px;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.2);border-radius:20px;font-family:var(--ff-mono);font-size:0.7rem;color:#A78BFA;cursor:pointer;">⚠️ Erros OBD</span>
         </div>
         <div id="iaMsgs" style="min-height:300px;max-height:55vh;overflow-y:auto;padding:20px;background:var(--surf-0);display:flex;flex-direction:column;gap:12px;">
-          <div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:20px;">Faça uma pergunta sobre seu veículo.</div>
+          <div style="text-align:center;color:var(--text-muted);font-size:0.85rem;padding:20px;">Faça uma pergunta sobre os sintomas do seu veículo.</div>
         </div>
         <div style="padding:14px;background:var(--surf-2);border-top:1px solid rgba(167,139,250,0.2);display:flex;gap:10px;align-items:center;">
-          <input id="iaInput" class="input" placeholder="Pergunte sobre seu veículo..." style="margin:0;border-radius:24px;padding:12px 18px;border-color:rgba(167,139,250,0.25);">
+          <input id="iaInput" class="input" placeholder="Descreva um sintoma ou erro..." style="margin:0;border-radius:24px;padding:12px 18px;border-color:rgba(167,139,250,0.25);">
           <button onclick="iaEnviar()" style="background:#A78BFA;border:none;border-radius:50%;width:44px;height:44px;min-width:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.1rem;color:#000;flex-shrink:0;">➤</button>
         </div>
       </div>
@@ -431,7 +437,7 @@ function _iniciarPortalListeners() {
   }
 }
 
-// 🚘 RENDERIZAÇÃO DAS O.S. (ATUALIZADO: FICHA REAL, FOTOS, REVISÕES E CORREÇÃO DA PLACA)
+// 🚘 RENDERIZAÇÃO DAS O.S. (COM HISTÓRICO DE AUDITORIA PREMIUM)
 function _renderPortalOS(osList) {
   const content = document.getElementById('renderOSArea');
   const STEPS = ['patio', 'orcamento', 'aprovacao', 'box', 'pronto', 'faturado', 'entregue'];
@@ -445,10 +451,8 @@ function _renderPortalOS(osList) {
     if(!STEPS.includes(statusLimpo) && statusLimpo !== 'cancelado') statusLimpo = 'patio';
     const statusIdx = STEPS.indexOf(statusLimpo); const isConcluida = (statusLimpo === 'pronto' || statusLimpo === 'entregue' || statusLimpo === 'faturado'); const isOrcamento = (statusLimpo === 'aprovacao'); const isCancelada = (statusLimpo === 'cancelado');
 
-    // BUSCA FICHA REAL DO VEÍCULO
     const v = P.veiculos.find(x => x.id === os.veiculoId) || {};
 
-    // ALERTA DE PRÓXIMA REVISÃO
     const revisaoHTML = (os.proxRev || os.proxKm) ? `
       <div style="margin: 20px; padding: 16px; background: var(--success-dim); border: 1px solid var(--success); border-radius: var(--r-md); display: flex; align-items: center; gap: 12px;">
         <div style="font-size:1.5rem">📅</div>
@@ -467,7 +471,6 @@ function _renderPortalOS(osList) {
         else { const meses = Math.floor(diasDiff / 30); badgeHistorico = `<div class="badge-historico">⏱️ Serviço realizado há <strong>${meses} ${meses>1?'meses':'mês'}</strong>. Considere revisar.</div>`; }
     }
 
-    // CORREÇÃO: FORMATANDO A PLACA CORRETAMENTE
     const placaBruta = os.placa || v.placa || 'S/PLACA';
     const placaLimpa = placaBruta.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const placaFormatada = placaLimpa.length === 7 ? `${placaLimpa.slice(0,3)}-${placaLimpa.slice(3)}` : (placaLimpa || 'S/PLACA');
@@ -476,14 +479,32 @@ function _renderPortalOS(osList) {
     const stepperHTML = isCancelada ? `<div style="text-align:center;padding:24px;color:var(--danger);font-weight:700;font-family:var(--ff-display);font-size:1.4rem;">🚫 CANCELADA</div>` : `<div class="stepper-wrap"><div class="stepper"><div class="step-line"></div><div class="step-line-fill" style="width:${Math.max(0, (statusIdx / (STEPS.length-1)) * 90)}%"></div>${STEPS.map((s, i) => `<div class="step ${i < statusIdx ? 'done' : i === statusIdx ? 'active' : ''}"><div class="step-dot">${i < statusIdx ? '✓' : i+1}</div><div class="step-lbl">${STEP_LABELS[s]}</div></div>`).join('')}</div></div>`;
     const orcAlerta = isOrcamento ? `<div class="alerta-orcamento"><div style="font-family:var(--ff-display);font-size:1.2rem;font-weight:700;color:var(--warn);margin-bottom:6px">Orçamento Disponível</div><div style="font-size:0.9rem;color:white;margin-bottom:16px">Valor estimado: <strong style="font-size:1.3rem;">${formatter.format(os.total || 0)}</strong></div><div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn btn-success" style="flex:1;" onclick="_aprovarOrcamento('${os.id}')">✓ APROVAR</button><button class="btn btn-outline" style="flex:1;" onclick="_negociarOrcamento('${placaFormatada}')">💬 NEGOCIAR</button></div></div>` : '';
 
-    let detalheHtml = `<div class="os-details">
-        <div style="margin-bottom:15px; border-bottom: 1px solid var(--border); padding-bottom:15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div><span class="ficha-lbl">Veículo</span><span class="ficha-val">${v.modelo || os.veiculo || '—'}</span></div>
-            <div><span class="ficha-lbl">Ano / Cor</span><span class="ficha-val">${v.ano || '—'} / ${v.cor || '—'}</span></div>
+    // NOVA RENDERIZAÇÃO DA TIMELINE (HISTÓRICO DE AUDITORIA PREMIUM)
+    const timelineHtml = `
+      <div class="timeline-box">
+        <div class="timeline-box-title">⏱️ Histórico de Atualizações</div>
+        <div class="timeline">
+          ${(os.timeline && os.timeline.length > 0) ? [...os.timeline].reverse().map(tl => `
+            <div class="tl-item">
+              <div class="tl-meta">
+                <span class="tl-date">${new Date(tl.dt).toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
+                <span class="tl-user">👤 ${tl.user || tl.usuario || 'Sistema'}</span>
+              </div>
+              <div class="tl-action">${tl.acao}</div>
+            </div>
+          `).join('') : '<div style="color:var(--text-muted);font-size:0.8rem;text-align:center;">Nenhum registro de atividade ainda.</div>'}
         </div>
-        <div style="margin-bottom:15px;"><span class="ficha-lbl">Diagnóstico Técnico</span><div style="font-size:0.85rem">${os.diagnostico || 'Avaliação técnica...'}</div></div>
-        <div class="media-grid">${(os.media || os.fotos || []).map(m => `<div class="media-item"><img src="${m.url || m}" onclick="window.open('${m.url || m}')"></div>`).join('')}</div>
-        <div class="timeline-box"><div class="timeline">${(os.timeline || []).reverse().map(tl => `<div class="tl-item"><div class="tl-date">${new Date(tl.dt).toLocaleString('pt-BR')}</div><div class="tl-action">${tl.acao}</div></div>`).join('')}</div></div>
+      </div>
+    `;
+
+    let detalheHtml = `<div class="os-details">
+        <div style="margin-bottom:15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom:15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div><span class="ficha-lbl" style="font-size:0.7rem; color:var(--text-muted); display:block;">Veículo</span><span class="ficha-val" style="font-weight:bold;">${v.modelo || os.veiculo || '—'}</span></div>
+            <div><span class="ficha-lbl" style="font-size:0.7rem; color:var(--text-muted); display:block;">Ano / Cor</span><span class="ficha-val" style="font-weight:bold;">${v.ano || '—'} / ${v.cor || '—'}</span></div>
+        </div>
+        <div style="margin-bottom:20px;"><span class="ficha-lbl" style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:5px;">Diagnóstico Técnico</span><div style="font-size:0.85rem; background:rgba(0,0,0,0.2); padding:10px; border-radius:var(--r-md); border-left:3px solid var(--brand);">${os.diagnostico || 'Avaliação técnica em andamento...'}</div></div>
+        ${(os.media && os.media.length > 0) || (os.fotos && os.fotos.length > 0) ? `<div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase;">Evidências (Fotos/Vídeos)</div><div class="media-grid">${(os.media || os.fotos || []).map(m => `<div class="media-item"><img src="${m.url || m}" onclick="window.open('${m.url || m}')"></div>`).join('')}</div>` : ''}
+        ${timelineHtml}
     </div>`;
 
     return `
@@ -496,7 +517,7 @@ function _renderPortalOS(osList) {
           <div><strong style="color:white">${v.modelo || os.veiculo || 'Veículo'}</strong></div><div style="font-family:var(--ff-mono);font-size:0.6rem;color:var(--text-muted)">OS #${os.id.slice(-6).toUpperCase()}</div>
         </div>
         ${stepperHTML}${orcAlerta}${revisaoHTML}${badgeHistorico}
-        <button class="btn-toggle-detalhes" onclick="this.closest('.os-card').classList.toggle('expanded')">▼ VER DETALHAMENTO E FOTOS</button>
+        <button class="btn-toggle-detalhes" onclick="this.closest('.os-card').classList.toggle('expanded')">▼ VER DETALHAMENTO E HISTÓRICO DA OS</button>
         ${detalheHtml}
       </div>`;
   }).join('');
@@ -809,7 +830,7 @@ async function _recusarOrcamento(osId) {
 
 <script src="elm327-service.js"></script>
 <script>
-// ── IA thIAguinho ──────────────────────────────────────────
+// ── IA thIAguinho (BLINDADA PARA TRIAGEM TÉCNICA) ──────────────────────────────────────────
 let _iaHist = [];
 let _osDoCliente = [];
 
@@ -859,7 +880,7 @@ async function iaEnviar() {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         contents,
-        systemInstruction: { parts: [{ text: `Você é o thIAguinho, assistente automotivo. Responda em português, de forma clara e amigável.\n\nCONTEXTO REAL:\n${ctx}\n\nNão invente dados. Se não souber, diga para contatar a oficina.` }] }
+        systemInstruction: { parts: [{ text: `Você é o thIAguinho, assistente de triagem técnica automotiva da oficina.\nREGRAS ABSOLUTAS:\n1. Aja apenas como conselheiro sobre os sintomas e defeitos relatados pelo cliente.\n2. NUNCA forneça instruções de como consertar ou diagnosticar definitivamente o problema em casa.\n3. Sempre termine sua orientação instruindo o cliente a utilizar o Scanner OBD (na aba OBD) para ler os códigos DTC do carro e/ou a chamar a oficina no CHAT.\n4. Seja amigável, transparente e focado em encaminhar o cliente para o atendimento humano ou leitura de scanner com dados na mão.\n\nCONTEXTO REAL DO CLIENTE:\n${ctx}` }] }
       })
     });
     const data = await res.json();
@@ -880,7 +901,7 @@ function _iaFallback(msg) {
       .join('<br>');
   }
   if (m.includes('manutenção') || m.includes('revisão')) return '🔧 Mantenha troca de óleo a cada 10.000 km, filtro de ar a cada 15.000 km e pastilhas a cada 30.000 km. Quer agendar? Use a aba 📅 AGENDAR.';
-  return 'Para uma resposta mais precisa, peça ao atendente para configurar a IA no painel da oficina. Por enquanto, use a aba 💬 CHAT para falar diretamente.';
+  return 'Para uma resposta mais precisa, peço que utilize a aba 🔌 OBD para ler os códigos do seu veículo, ou chame nosso mecânico na aba 💬 CHAT.';
 }
 
 let _iaCnt = 0;
