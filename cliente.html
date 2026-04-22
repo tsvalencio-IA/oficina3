@@ -830,7 +830,7 @@ async function _recusarOrcamento(osId) {
 
 <script src="elm327-service.js"></script>
 <script>
-// ── IA thIAguinho (BLINDADA PARA TRIAGEM TÉCNICA) ──────────────────────────────────────────
+// ── IA thIAguinho (ATUALIZADA E BLINDADA) ──────────────────────────────────────────
 let _iaHist = [];
 let _osDoCliente = [];
 
@@ -862,17 +862,20 @@ async function iaEnviar() {
   const key = P?.oficina?.apiKeys?.gemini || P?.oficina?.geminiKey || null;
   _iaHist.push({ role: 'user', text: msg });
 
-  if (!key) {
-    _iaReplace(lid, _iaFallback(msg));
-    return;
-  }
-
   // Contexto real das OS
   let ctx = `Cliente: ${P?.cliente?.nome || '—'} | Oficina: ${P?.oficina?.nomeFantasia || '—'}\n`;
+  let kmDoCliente = "Desconhecida"; // Nova variável para KM
+  
   (_osDoCliente.length ? _osDoCliente : (P?.osDoCliente || [])).forEach(o => {
-    ctx += `OS #${o.id?.slice(-6)} | ${o.placa||''} ${o.veiculo||''} | Status: ${o.status||'—'} | Total: R$${o.total||0}\n`;
+    kmDoCliente = o.km || kmDoCliente; // Pega a KM
+    ctx += `OS #${o.id?.slice(-6)} | ${o.placa||''} ${o.veiculo||''} | KM: ${o.km||'—'} | Status: ${o.status||'—'} | Total: R$${o.total||0}\n`;
     if (o.dtcsCliente?.length) ctx += `  DTCs OBD: ${o.dtcsCliente.map(d=>d.code).join(', ')}\n`;
   });
+
+  if (!key) {
+    _iaReplace(lid, _iaFallback(msg, kmDoCliente));
+    return;
+  }
 
   try {
     const contents = _iaHist.map(h => ({ role: h.role==='user'?'user':'model', parts:[{text:h.text}] }));
@@ -880,7 +883,7 @@ async function iaEnviar() {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         contents,
-        systemInstruction: { parts: [{ text: `Você é o thIAguinho, assistente de triagem técnica automotiva da oficina.\nREGRAS ABSOLUTAS:\n1. Aja apenas como conselheiro sobre os sintomas e defeitos relatados pelo cliente.\n2. NUNCA forneça instruções de como consertar ou diagnosticar definitivamente o problema em casa.\n3. Sempre termine sua orientação instruindo o cliente a utilizar o Scanner OBD (na aba OBD) para ler os códigos DTC do carro e/ou a chamar a oficina no CHAT.\n4. Seja amigável, transparente e focado em encaminhar o cliente para o atendimento humano ou leitura de scanner com dados na mão.\n\nCONTEXTO REAL DO CLIENTE:\n${ctx}` }] }
+        systemInstruction: { parts: [{ text: `Você é o thIAguinho, assistente técnico. \nREGRAS:\n1. Aja como conselheiro. NUNCA ensine a consertar em casa.\n2. Se ele perguntar de manutenção, o carro dele tem ${kmDoCliente} KM. Liste as revisões típicas para essa quilometragem.\n3. Termine pedindo para usar o OBD ou chamar o chat.\n\nCONTEXTO:\n${ctx}` }] }
       })
     });
     const data = await res.json();
@@ -888,20 +891,25 @@ async function iaEnviar() {
     _iaHist.push({ role: 'model', text: resp });
     _iaReplace(lid, resp.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>'));
   } catch(e) {
-    _iaReplace(lid, _iaFallback(msg));
+    _iaReplace(lid, _iaFallback(msg, kmDoCliente)); // Passa a KM pro fallback
   }
 }
 
-function _iaFallback(msg) {
+function _iaFallback(msg, km = "desconhecida") {
   const m = msg.toLowerCase();
   const os = _osDoCliente.length ? _osDoCliente : (P?.osDoCliente || []);
+  
   if (m.includes('status') || m.includes('os') || m.includes('ordem')) {
     if (!os.length) return 'Nenhuma OS encontrada no momento.';
-    return os.map(o => `🚘 <strong>${o.placa||o.veiculo||'Veículo'}</strong> — ${o.status||'—'}${o.total?` | R$ ${Number(o.total).toLocaleString('pt-BR',{minimumFractionDigits:2})}`:''}`)
-      .join('<br>');
+    return os.map(o => `🚘 <strong>${o.placa||o.veiculo||'Veículo'}</strong> — ${o.status||'—'}${o.total?` | R$ ${Number(o.total).toLocaleString('pt-BR',{minimumFractionDigits:2})}`:''}`).join('<br>');
   }
-  if (m.includes('manutenção') || m.includes('revisão')) return '🔧 Mantenha troca de óleo a cada 10.000 km, filtro de ar a cada 15.000 km e pastilhas a cada 30.000 km. Quer agendar? Use a aba 📅 AGENDAR.';
-  return 'Para uma resposta mais precisa, peço que utilize a aba 🔌 OBD para ler os códigos do seu veículo, ou chame nosso mecânico na aba 💬 CHAT.';
+  if (m.includes('manutenção') || m.includes('revisão') || m.includes('pendentes')) {
+     return `🔧 O seu veículo está com a KM ${km}. Recomendamos revisar o óleo do motor, filtro de ar e inspecionar os freios. Quer agendar? Use a aba 📅 AGENDAR.`;
+  }
+  if (m.includes('erro') || m.includes('obd') || m.includes('defeito')) {
+     return `⚠️ Para que eu possa explicar os erros com precisão, por favor, clique na aba 🔌 OBD e conecte o Scanner, ou envie as luzes que acenderam pelo 💬 CHAT.`;
+  }
+  return 'Para uma resposta mais precisa, ligue o Scanner OBD na aba ao lado ou contacte o nosso mecânico pelo chat.';
 }
 
 let _iaCnt = 0;
