@@ -349,7 +349,8 @@ window.checkPgtoOS = function() {
 };
 
 // =======================================================
-// CIRURGIA NÍVEL PRO: salvarOS() com Auditoria Inteligente
+// O CÉREBRO DA AUDITORIA (DEEP DIFF - GRANULAR)
+// Registra cada alteração exata no histórico do cliente.
 // =======================================================
 window.salvarOS = async function() {
   const osId = $v('osId');
@@ -433,7 +434,7 @@ window.salvarOS = async function() {
       payload.media = JSON.parse($('osMediaArray').value || '[]');
   }
 
-  // --- O CÉREBRO DA AUDITORIA (DIFF) ---
+  // --- LÓGICA FORENSE DE COMPARAÇÃO DE DADOS (LINHA DO TEMPO) ---
   const tl = JSON.parse($('osTimelineData')?.value || '[]');
   const funcUser = J.nome || 'Mecânico/Gestor';
 
@@ -447,52 +448,71 @@ window.salvarOS = async function() {
           registouAlgo = true;
       }
 
-      // 2. Mudança de Diagnóstico
+      // 2. Mudança de Diagnóstico (Captura o texto exato)
       const oldDiag = (oldOS.diagnostico || '').trim();
       const novoDiag = (payload.diagnostico || '').trim();
       if (novoDiag && novoDiag !== oldDiag) {
-          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Diagnóstico Técnico atualizado: "${novoDiag}"` });
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Diagnóstico Técnico preenchido/atualizado: "${novoDiag}"` });
           registouAlgo = true;
       }
 
-      // 3. Mudança de Checklist
-      let chkMudou = false;
-      if ((oldOS.chkPainel || false) !== (payload.chkPainel || false)) chkMudou = true;
-      if ((oldOS.chkPressao || false) !== (payload.chkPressao || false)) chkMudou = true;
-      if ((oldOS.chkCarroceria || false) !== (payload.chkCarroceria || false)) chkMudou = true;
-      if ((oldOS.chkDocumentos || false) !== (payload.chkDocumentos || false)) chkMudou = true;
+      // 3. Verificação Individual de Checklist
+      const mapCheck = { 
+          chkPainel: 'Painel/Instrumentos', 
+          chkPressao: 'Pressão dos Pneus', 
+          chkCarroceria: 'Carroceria/Pintura', 
+          chkDocumentos: 'Documentos' 
+      };
       
-      if (chkMudou) {
-          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Checklist de Inspeção Técnica preenchido/atualizado.` });
-          registouAlgo = true;
-      }
+      ['chkPainel', 'chkPressao', 'chkCarroceria', 'chkDocumentos'].forEach(chk => {
+          const oldVal = oldOS[chk] || false;
+          const newVal = payload[chk] || false;
+          if (oldVal !== newVal) {
+              const estado = newVal ? 'Marcou' : 'Desmarcou';
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `${estado} o item de inspeção: ${mapCheck[chk]}` });
+              registouAlgo = true;
+          }
+      });
 
-      // 4. Novas Fotos/Evidências
+      // 4. Identificação de Novas Peças Adicionadas
+      const oldPecasDesc = (oldOS.pecas || []).map(p => (p.desc || '').toLowerCase().trim());
+      (payload.pecas || []).forEach(p => {
+          if(p.desc && !oldPecasDesc.includes(p.desc.toLowerCase().trim())) {
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Adicionou peça: ${p.desc} (Qtd: ${p.qtd})` });
+              registouAlgo = true;
+          }
+      });
+
+      // 5. Identificação de Novos Serviços Adicionados
+      const oldServsDesc = (oldOS.servicos || []).map(s => (s.desc || '').toLowerCase().trim());
+      (payload.servicos || []).forEach(s => {
+          if(s.desc && !oldServsDesc.includes(s.desc.toLowerCase().trim())) {
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Adicionou serviço: ${s.desc}` });
+              registouAlgo = true;
+          }
+      });
+
+      // 6. Novas Fotos/Evidências
       const oldMediaLength = (oldOS.media || oldOS.fotos || []).length;
       const newMediaLength = (payload.media || []).length;
       if (newMediaLength > oldMediaLength) {
           const adicionadas = newMediaLength - oldMediaLength;
-          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `${adicionadas} nova(s) evidência(s) visual(is) anexada(s) à Ficha.` });
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Anexou ${adicionadas} nova(s) foto(s)/vídeo(s) de evidência.` });
           registouAlgo = true;
       }
 
-      // 5. Orçamento Alterado
-      if (oldOS.total !== payload.total && payload.total > 0) {
-          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Orçamento de Peças/Serviços atualizado. Valor: R$ ${payload.total.toFixed(2).replace('.', ',')}` });
-          registouAlgo = true;
+      // Fallback genérico caso tenha havido uma edição noutros campos (como a KM)
+      if (!registouAlgo && oldOS.updatedAt !== payload.updatedAt) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Detalhes da Ordem de Serviço foram atualizados.` });
       }
-
-      // Fallback: Se ele salvou e o script não capturou a categoria exata (ex: mudou a KM)
-      if (!registouAlgo) {
-          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Detalhes da Ordem de Serviço atualizados.` });
-      }
+      
   } else {
-      // Nova O.S.
+      // Criação de Nova O.S.
       tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Deu entrada no veículo e abriu a O.S. (Status: ${STATUS_MAP_LEGACY[payload.status] || payload.status})` });
   }
 
   payload.timeline = tl;
-  // --- FIM DA AUDITORIA ---
+  // --- FIM DA AUDITORIA FORENSE ---
 
   if (($v('osStatus') === 'Pronto' || $v('osStatus') === 'Entregue' || $v('osStatus') === 'pronto' || $v('osStatus') === 'entregue') && payload.mecId) {
       const mec = J.equipe.find(f => f.id === payload.mecId);
