@@ -5,6 +5,11 @@
 
 'use strict';
 
+const getDB = () => {
+    if (typeof window.getDB === 'function') return window.getDB();
+    throw new Error('window.getDB não está disponível');
+};
+
 window.renderFinanceiro = function() {
     const buscaTipo = $v('filtroFinTipo');
     const buscaStatus = $v('filtroFinStatus');
@@ -45,6 +50,7 @@ window.renderFinanceiro = function() {
     }
 
     tb.innerHTML = base.map(f => {
+        const esc = window.escHtml || (x => String(x ?? ''));
         const stCls = f.status === 'Pago' ? 'pill-green' : 'pill-warn'; 
         const tipCls = f.tipo === 'Entrada' ? 'pill-green' : 'pill-danger';
         const atrasado = f.status === 'Pendente' && f.venc && new Date(f.venc) < new Date();
@@ -54,20 +60,20 @@ window.renderFinanceiro = function() {
         if(f.vinculo) {
             if(f.vinculo.startsWith('F_')) {
                 const forn = J.fornecedores.find(x => x.id === f.vinculo.replace('F_',''));
-                if(forn) vinculoNome = `<br><small style="color:var(--cyan)">Fornecedor: ${forn.nome}</small>`;
+                if(forn) vinculoNome = `<br><small style="color:var(--cyan)">Fornecedor: ${esc(forn.nome)}</small>`;
             } else if(f.vinculo.startsWith('E_')) {
                 const eq = J.equipe.find(x => x.id === f.vinculo.replace('E_',''));
-                if(eq) vinculoNome = `<br><small style="color:var(--purple)">Colaborador: ${eq.nome}</small>`;
+                if(eq) vinculoNome = `<br><small style="color:var(--purple)">Colaborador: ${esc(eq.nome)}</small>`;
             }
         }
 
         return `<tr style="${atrasado ? 'background:rgba(255,59,59,0.05);' : ''}">
             <td style="font-family:var(--fm);font-size:0.75rem">${dtBr(f.venc)}</td>
-            <td><span class="pill ${tipCls}">${f.tipo}</span></td>
-            <td>${f.desc} ${vinculoNome}</td>
-            <td style="font-family:var(--fm);font-size:0.75rem">${f.pgto || '-'}</td>
+            <td><span class="pill ${tipCls}">${esc(f.tipo)}</span></td>
+            <td>${esc(f.desc)} ${vinculoNome}</td>
+            <td style="font-family:var(--fm);font-size:0.75rem">${esc(f.pgto || '-')}</td>
             <td style="font-family:var(--fm);font-weight:700;color:${corValor}">${moeda(f.valor)}</td>
-            <td><span class="pill ${stCls}">${f.status}</span></td>
+            <td><span class="pill ${stCls}">${esc(f.status)}</span></td>
             <td>
                 <button class="btn-ghost" onclick="prepFin('${f.id}');abrirModal('modalFin')" title="Editar">✏</button>
                 <button class="btn-danger" onclick="toggleStatusFin('${f.id}','${f.status}')" title="${f.status === 'Pago' ? 'Marcar como Pendente' : 'Marcar como Pago'}">
@@ -120,12 +126,12 @@ window.salvarFin = async function() {
     
     const id = $v('finId');
     if (id) {
-        await db.collection('financeiro').doc(id).update(payload);
+        await getDB().collection('financeiro').doc(id).update(payload);
         window.toast('✓ LANÇAMENTO ATUALIZADO'); 
         audit('FINANCEIRO', 'Editou ' + payload.tipo + ': ' + payload.desc);
     } else { 
         payload.createdAt = new Date().toISOString(); 
-        await db.collection('financeiro').add(payload); 
+        await getDB().collection('financeiro').add(payload); 
         window.toast('✓ LANÇAMENTO REGISTRADO'); 
         audit('FINANCEIRO', 'Lançou ' + payload.tipo + ': ' + payload.desc);
     }
@@ -134,7 +140,7 @@ window.salvarFin = async function() {
 
 window.toggleStatusFin = async function(id, status) {
     const novoStatus = status === 'Pago' ? 'Pendente' : 'Pago';
-    await db.collection('financeiro').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() }); 
+    await getDB().collection('financeiro').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() }); 
     window.toast(`✓ STATUS ALTERADO PARA ${novoStatus.toUpperCase()}`);
 };
 
@@ -275,21 +281,21 @@ window.salvarNF = async function() {
     
     if (!itens.length) { window.toast('⚠ Adicione ao menos um item', 'warn'); return; }
     
-    const batch = db.batch(); 
+    const batch = getDB().batch(); 
     let totalNF = 0;
     
     for (const item of itens) {
         totalNF += item.qtd * item.custo;
         const existente = J.estoque.find(p => p.desc.toLowerCase() === item.desc.toLowerCase());
         if (existente) { 
-            batch.update(db.collection('estoqueItems').doc(existente.id), {
+            batch.update(getDB().collection('estoqueItems').doc(existente.id), {
                 qtd: (existente.qtd || 0) + item.qtd,
                 custo: item.custo,
                 venda: item.venda,
                 updatedAt: new Date().toISOString()
             }); 
         } else { 
-            batch.set(db.collection('estoqueItems').doc(), {
+            batch.set(getDB().collection('estoqueItems').doc(), {
                 tenantId: J.tid, desc: item.desc, qtd: item.qtd, custo: item.custo, venda: item.venda, min: 1, und: 'UN', createdAt: new Date().toISOString()
             }); 
         }
@@ -301,7 +307,7 @@ window.salvarNF = async function() {
     
     for (let i = 0; i < nPar; i++) {
         const d = new Date($v('nfVenc') || new Date()); d.setMonth(d.getMonth() + i);
-        batch.set(db.collection('financeiro').doc(), {
+        batch.set(getDB().collection('financeiro').doc(), {
             tenantId: J.tid, tipo: 'Saída', status: st,
             desc: `NF ${$v('nfNumero') || 's/n'} — ${J.fornecedores.find(f => f.id === $v('nfFornec'))?.nome || 'Fornecedor'} ${nPar > 1 ? `(${i + 1}/${nPar})` : ''}`,
             valor: totalNF / nPar, pgto: $v('nfPgtoForma'), venc: d.toISOString().split('T')[0], createdAt: new Date().toISOString()
@@ -364,7 +370,7 @@ window.salvarPgtoRH = async function() {
         createdAt: new Date().toISOString()
     };
 
-    const batch = db.batch();
+    const batch = getDB().batch();
     
     if(tipo === 'Pagamento Comissão') {
         let restante = valor;
@@ -372,16 +378,16 @@ window.salvarPgtoRH = async function() {
         for(let c of comissoesPendentes) {
             if(restante <= 0) break;
             if(c.valor <= restante) {
-                batch.update(db.collection('financeiro').doc(c.id), {status: 'Pago', updatedAt: new Date().toISOString()});
+                batch.update(getDB().collection('financeiro').doc(c.id), {status: 'Pago', updatedAt: new Date().toISOString()});
                 restante -= c.valor;
             } else {
-                batch.update(db.collection('financeiro').doc(c.id), {valor: c.valor - restante, updatedAt: new Date().toISOString()});
+                batch.update(getDB().collection('financeiro').doc(c.id), {valor: c.valor - restante, updatedAt: new Date().toISOString()});
                 restante = 0;
             }
         }
     }
 
-    batch.set(db.collection('financeiro').doc(), payload);
+    batch.set(getDB().collection('financeiro').doc(), payload);
     await batch.commit();
 
     window.toast('✓ LANÇAMENTO DE RH REGISTRADO NO CAIXA');
