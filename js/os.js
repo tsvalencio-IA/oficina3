@@ -94,11 +94,15 @@ window.salvarOS = async function() {
   }
 
   // --- LÓGICA FORENSE DE COMPARAÇÃO DE DADOS (LINHA DO TEMPO) ---
-  const tl = JSON.parse($('osTimelineData')?.value || '[]');
-  const funcUser = J.nome || 'Mecânico/Gestor';
+let tl = [];
+try {
+  tl = JSON.parse(($('osTimelineData') && $('osTimelineData').value) || '[]');
+} catch(e) {
+  tl = [];
+}  const funcUser = J.nome || 'Mecânico/Gestor';
 
   if (osId) {
-      const oldOS = J.os.find(x => x.id === osId) || {};
+      const oldOS = (J.os || []).find(x => x.id === osId) || {};
       let registouAlgo = false;
 
       // 1. Mudança de Status
