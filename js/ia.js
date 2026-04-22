@@ -1,312 +1,153 @@
 /**
- * JARVIS ERP — ia.js / chat.js
- * Gemini RAG + Chat CRM admin↔cliente + Chat equipe↔admin
+ * JARVIS ERP — ia.js
+ * Gemini AI Integration with Advanced Auditory & History (24 months)
+ *
+ * Powered by thIAguinho Soluções Digitais
  */
-
 'use strict';
 
-// ============================================================
-// GEMINI IA
-// ============================================================
-let _iaHistorico = [];
+window.iaHistorico = [];
 
 window.iaPerguntar = async function() {
-  const inp = _$('iaInput');
-  const msg = inp ? inp.value.trim() : '';
-  if (!msg) return;
-  inp.value = '';
+  const msg = window._v ? window._v('iaInput') : (document.getElementById('iaInput')?.value.trim() || '');
+  if(!msg) return;
+  if(window._sv) window._sv('iaInput',''); else { const el=document.getElementById('iaInput'); if(el) el.value=''; }
 
-  _adicionarMsgIA('user', msg);
-  _adicionarMsgIA('bot', '<span style="color:var(--text-muted)">⏳ Analisando dados da oficina...</span>', true);
+  window.adicionarMsgIA('user', msg);
+  window.adicionarMsgIA('bot', '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--cyan);border-right-color:transparent;border-radius:50%;animation:jspin 0.8s linear infinite;vertical-align:middle;margin-right:6px;"></span> Acessando base de dados...');
 
-  const key = J.gemini;
-  if (!key) {
-    _iaMsgsRemoveLast();
-    _adicionarMsgIA('bot', '⚠️ Configure a API Key do Gemini no painel do Superadmin.');
-    return;
-  }
-
-  // RAG — contexto da oficina
-  const ctx = _buildContext();
-  const systemPrompt = `Você é o assistente de IA da oficina "${J.tnome}", especializado em gestão automotiva.
-
-DADOS DA OFICINA AGORA:
-${ctx}
-
-REGRAS:
-- Responda sempre em português brasileiro
-- Seja direto, técnico e útil
-- Nunca invente dados — baseie-se apenas nos dados fornecidos
-- Ao mencionar valores, use o formato R$ X.XXX,XX
-- Para placas de veículos, destaque em negrito`;
-
-  _iaHistorico.push({ role: 'user', text: msg });
-
-  const MODELOS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-
-  for (const modelo of MODELOS) {
-    try {
-      const contents = _iaHistorico.map(h => ({
-        role:  h.role === 'user' ? 'user' : 'model',
-        parts: [{ text: h.text }]
-      }));
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            generationConfig: { temperature: 0.4, maxOutputTokens: 1024 }
-          })
-        }
-      );
-
-      if (res.status === 429) {
-        _iaMsgsRemoveLast();
-        _adicionarMsgIA('bot', '⚠️ Limite de uso da API atingido. Aguarde 1 minuto e tente novamente.');
-        return;
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        if (modelo === MODELOS[MODELOS.length - 1]) throw new Error(data.error?.message || 'Erro na API');
-        continue;
-      }
-
-      const resposta = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta.';
-      _iaHistorico.push({ role: 'model', text: resposta });
-      _iaMsgsRemoveLast();
-      _adicionarMsgIA('bot', _formatarRespIA(resposta));
-      return;
-
-    } catch (e) {
-      if (modelo === MODELOS[MODELOS.length - 1]) {
-        _iaMsgsRemoveLast();
-        _adicionarMsgIA('bot', `⚠️ Erro: ${e.message}`);
-      }
+  const key = window.J && window.J.gemini;
+  if(!key || !String(key).trim()){
+    // Mensagem honesta: explica exatamente O QUE ESTÁ FALTANDO e COMO RESOLVER
+    const lastBotMsg = document.getElementById('iaMsgs').lastChild;
+    if(lastBotMsg) lastBotMsg.remove();
+    
+    const role = (window.J && window.J.role) || '';
+    let instr = '';
+    if(role === 'admin' || role === 'superadmin'){
+      instr = '<br><br><strong>Como resolver:</strong><br>' +
+              '1. Entre no Firebase Console → Firestore Database<br>' +
+              '2. Coleção <code>oficinas</code> → documento da sua oficina<br>' +
+              '3. Adicione o campo <code>apiKeys.gemini</code> (tipo: map) com sua chave Gemini<br>' +
+              '4. Pegue uma chave grátis em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--cyan);text-decoration:underline">aistudio.google.com/app/apikey</a><br>' +
+              '5. Faça logout e login novamente para recarregar a chave na sessão.';
+    } else {
+      instr = '<br><br>Peça ao administrador da oficina para configurar a chave Gemini no Firestore (campo <code>apiKeys.gemini</code> da coleção <code>oficinas</code>).';
     }
-  }
-};
-
-window.iaAnalisarDRE = async function() {
-  _sv('iaInput', 'Analise o financeiro atual da oficina. Quais são as principais fontes de receita, as maiores despesas, e qual a saúde geral do caixa? Dê sugestões práticas de melhoria.');
-  if (_$('iaInput')) _$('iaInput').dispatchEvent(new Event('input'));
-  await iaPerguntar();
-};
-
-window.iaAnalisarEstoque = async function() {
-  _sv('iaInput', 'Analise o estoque atual. Quais itens estão críticos (abaixo do mínimo)? Quais têm maior giro? Recomende o que comprar com prioridade.');
-  await iaPerguntar();
-};
-
-window.iaDiagnosticarPlaca = async function(placa) {
-  _sv('iaInput', `Mostre o histórico completo de serviços da placa ${placa}. Há algum serviço vencido ou que deva ser feito em breve?`);
-  await iaPerguntar();
-};
-
-function _buildContext() {
-  const agora = new Date();
-  const mes   = agora.getMonth(), ano = agora.getFullYear();
-
-  const fatMes = J.os
-    .filter(o => o.status === 'Concluido' && o.updatedAt)
-    .reduce((acc, o) => {
-      const d = new Date(o.updatedAt);
-      return (d.getMonth() === mes && d.getFullYear() === ano) ? acc + (o.total || 0) : acc;
-    }, 0);
-
-  const osAbertas = J.os.filter(o => !['Concluido','Cancelado'].includes(o.status));
-  const pecasCrit = J.estoque.filter(p => (p.qtd || 0) <= (p.min || 0));
-
-  const osDetalhes = J.os.slice(-15).map(o => {
-    const v = J.veiculos.find(x => x.id === o.veiculoId);
-    const c = J.clientes.find(x => x.id === o.clienteId);
-    return `- Placa: **${v?.placa || '?'}** | Cliente: ${c?.nome || '?'} | Serviço: ${o.desc || '?'} | Status: ${o.status} | Data: ${dtBr(o.data)} | Valor: ${moeda(o.total)}`;
-  }).join('\n');
-
-  return `
-Oficina: ${J.tnome} | Nicho: ${J.nicho}
-Mecânicos: ${J.equipe.map(f => f.nome).join(', ') || 'nenhum'}
-Clientes cadastrados: ${J.clientes.length}
-Veículos cadastrados: ${J.veiculos.length}
-O.S. abertas no momento: ${osAbertas.length}
-Peças com estoque crítico: ${pecasCrit.map(p => p.desc).join(', ') || 'nenhuma'}
-Faturamento do mês atual: ${moeda(fatMes)}
-
-ÚLTIMAS 15 O.S.:
-${osDetalhes || 'Nenhuma O.S. registrada'}
-  `.trim();
-}
-
-function _formatarRespIA(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n- /g, '<br>• ')
-    .replace(/\n/g, '<br>');
-}
-
-function _adicionarMsgIA(role, html, temp = false) {
-  const container = _$('iaMsgs');
-  if (!container) return;
-  const div = document.createElement('div');
-  div.className = `ia-msg ${role}`;
-  if (temp) div.dataset.temp = '1';
-  if (role === 'bot') {
-    div.innerHTML = `<strong style="color:var(--brand);font-size:0.72rem;display:block;margin-bottom:4px">✦ IA</strong>${html}`;
-  } else {
-    div.innerHTML = html;
-  }
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
-function _iaMsgsRemoveLast() {
-  const container = _$('iaMsgs');
-  if (!container) return;
-  const temp = container.querySelector('[data-temp="1"]');
-  if (temp) temp.remove();
-}
-
-// Enter no input da IA
-document.addEventListener('DOMContentLoaded', () => {
-  const iaInput = _$('iaInput');
-  if (iaInput) iaInput.addEventListener('keydown', e => { if (e.key === 'Enter') iaPerguntar(); });
-});
-
-// ============================================================
-// CHAT CRM (admin ↔ cliente)
-// ============================================================
-window.renderChatLista = function() {
-  const container = _$('chatLista');
-  if (!container) return;
-
-  if (!J.clientes.length) {
-    container.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-state-icon">💬</div><div class="empty-state-sub">Nenhum cliente cadastrado</div></div>`;
+    window.adicionarMsgIA('bot', '⚠ <strong>Chave Gemini não configurada.</strong>' + instr);
+    if(window.toast) window.toast('⚠ Configure a chave Gemini para ativar a IA', 'warn');
     return;
   }
 
-  container.innerHTML = J.clientes.map(c => {
-    const msgs     = J.mensagens.filter(m => m.clienteId === c.id);
-    const ultima   = msgs[msgs.length - 1];
-    const naoLidas = msgs.filter(m => m.sender === 'cliente' && !m.lidaAdmin).length;
-    const isAtivo  = J.chatAtivo === c.id;
-    return `
-      <div class="chat-contact ${isAtivo ? 'active' : ''}" onclick="abrirChatCRM('${c.id}','${c.nome}')">
-        <div class="chat-contact-name">
-          ${c.nome}
-          ${naoLidas > 0 ? `<span class="chat-unread">${naoLidas}</span>` : ''}
-        </div>
-        <div class="chat-contact-last">${ultima?.msg || 'Sem mensagens'}</div>
-      </div>
-    `;
-  }).join('');
-};
-
-window.abrirChatCRM = function(cid, nome) {
-  J.chatAtivo = cid;
-  const head = _$('chatMainHeader');
-  if (head) head.textContent = nome;
-  const foot = _$('chatFoot');
-  if (foot) foot.style.display = 'flex';
-  renderChatMsgs(cid);
-
-  // Marcar como lidas
-  J.mensagens
-    .filter(m => m.clienteId === cid && m.sender === 'cliente' && !m.lidaAdmin)
-    .forEach(m => J.db.collection('mensagens').doc(m.id).update({ lidaAdmin: true }));
-};
-
-window.renderChatMsgs = function(cid) {
-  const container = _$('chatMessages');
-  if (!container) return;
-  const msgs = J.mensagens.filter(m => m.clienteId === cid);
-
-  if (!msgs.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-sub">Sem mensagens com este cliente</div></div>`;
+  if(!window.J || !Array.isArray(window.J.os)){
+    const lastBotMsg = document.getElementById('iaMsgs').lastChild;
+    if(lastBotMsg) lastBotMsg.remove();
+    window.adicionarMsgIA('bot', '⚠ Base de dados ainda carregando. Aguarde alguns segundos e tente novamente.');
     return;
   }
 
-  container.innerHTML = msgs.map(m => {
-    const t   = m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-    const dir = m.sender === 'admin' ? 'outgoing' : 'incoming';
-    return `<div class="chat-msg ${dir}">${m.msg}<div class="msg-time">${t}</div></div>`;
-  }).join('');
-  container.scrollTop = container.scrollHeight;
-};
+  // 1. INJEÇÃO DA MEMÓRIA GLOBAL DO GESTOR (Últimos 24 meses + Estoque + Contexto de Auditoria)
+  let historyContext = "BASE DE DADOS DE SERVIÇOS DA OFICINA (Últimos 24 meses):\n";
+  const limiteData = new Date();
+  limiteData.setMonth(limiteData.getMonth() - 24);
 
-window.enviarChatCRM = async function() {
-  const msg = _v('chatInputCRM');
-  if (!msg || !J.chatAtivo) return;
-  await J.db.collection('mensagens').add({
-    tenantId:    J.tid,
-    clienteId:   J.chatAtivo,
-    sender:      'admin',
-    msg,
-    lidaCliente: false,
-    lidaAdmin:   true,
-    ts:          Date.now()
+  window.J.os.filter(o => {
+      const dataOS = new Date(o.createdAt || o.data || o.updatedAt || Date.now());
+      return dataOS > limiteData;
+  }).forEach(o => {
+      const v = (window.J.veiculos || []).find(x => x.id === o.veiculoId);
+      historyContext += `[OS #${o.id.slice(-5).toUpperCase()} | Placa: ${v?.placa || o.placa || 'S/P'} | Data: ${o.data || 'N/A'} | Status: ${o.status}]\n`;
+      historyContext += `- Relato/Diag: ${o.desc || 'N/A'} | ${o.diagnostico || 'N/A'}\n`;
+      if (o.pecas && o.pecas.length > 0) historyContext += `- Peças Trocadas: ${o.pecas.map(p => p.desc).join(', ')}\n`;
+      if (o.servicos && o.servicos.length > 0) historyContext += `- Serviços Executados: ${o.servicos.map(s => s.desc).join(', ')}\n`;
+      historyContext += `- Valor Total: R$ ${o.total || 0}\n\n`;
   });
-  _sv('chatInputCRM', '');
-};
 
-// Enter no chat CRM
-document.addEventListener('DOMContentLoaded', () => {
-  const el = _$('chatInputCRM');
-  if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarChatCRM(); } });
-});
+  const infoOficina = `Oficina: ${window.J.tnome}. Mecânicos ativos: ${(window.J.equipe||[]).map(f=>f.nome).join(', ') || '—'}. Veículos cadastrados: ${(window.J.veiculos||[]).length}. Peças críticas (abaixo do mínimo): ${(window.J.estoque||[]).filter(p=>(p.qtd||0)<=(p.min||0)).map(p=>p.desc).join(', ') || 'nenhuma'}.`;
 
-// ============================================================
-// CHAT EQUIPE ↔ ADMIN (equipe.html)
-// ============================================================
-window.renderChatEquipe = function() {
-  const container = _$('chatMsgs');
-  if (!container) return;
+  // 2. O PROMPT MESTRE (AUDITORIA E CONSULTORIA SÊNIOR — PADRÃO DOUTOR-IE / BOSCH PRO)
+  const systemPrompt = `Você é o thIAguinho, o JARVIS Gestor Automotivo de alto nível.
+Seu conhecimento técnico é padrão Doutor-IE e Bosch Mecânico Pro. Seu conhecimento analítico é nível Diretor Operacional SaaS.
+Você ajuda o gestor da oficina a analisar lucratividade, investigar orçamentos e AUDITAR GARANTIAS.
 
-  if (!J.chatEquipe.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-sub">Sem mensagens ainda</div></div>`;
-    return;
-  }
+DIRETRIZES DE AUDITORIA (EXTREMAMENTE IMPORTANTE):
+1. Utilize a "BASE DE DADOS DE SERVIÇOS" fornecida abaixo para todas as respostas referentes a veículos e clientes específicos.
+2. Se questionado sobre a quebra de uma peça ou diagnóstico de um carro (placa), VOCÊ É OBRIGADO a varrer a base de dados e verificar se essa placa já esteve na oficina e se essa peça já foi trocada anteriormente.
+3. REGRAS DE GARANTIA PADRÃO DO MERCADO BRASILEIRO:
+   - Amortecedores: 2 anos ou 50.000 km.
+   - Kits de Amortecedor (batente, coifa, coxim): 3 meses ou 10.000 km.
+   - Pastilhas e Discos de freio: 3 meses ou 5.000 km.
+   - Motor/Injeção/Sensores: 3 meses (garantia legal).
+4. ALERTE O GESTOR IMEDIATAMENTE (em negrito e destaque) caso identifique que um mecânico está pedindo para trocar algo que ainda esteja na garantia com base no histórico.
+5. Explique tecnicamente por que a peça pode ter falhado prematuramente (reincidência) citando causas-raiz prováveis para evitar prejuízos à oficina.
+6. Se for uma análise financeira ou de estoque, forneça insights diretos baseados nos dados do "Cenário Atual".
 
-  container.innerHTML = J.chatEquipe.map(m => {
-    const t    = m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : '';
-    const dir  = m.sender === 'equipe' ? 'outgoing' : 'incoming';
-    const nome = m.sender === 'equipe' ? J.nome : 'Admin';
+Cenário Atual da Oficina: ${infoOficina}
 
-    // Marcar como lida
-    if (m.sender === 'admin' && !m.lidaEquipe && m.para === J.fid) {
-      J.db.collection('chat_equipe').doc(m.id).update({ lidaEquipe: true }).catch(() => {});
+${historyContext}
+
+Responda sempre em português do Brasil, de forma clínica, técnica e sem alucinar dados não existentes na base.`;
+
+  window.iaHistorico.push({role: 'user', text: msg});
+
+  try {
+    const contents = window.iaHistorico.map(h => ({role: h.role === 'user' ? 'user' : 'model', parts: [{text: h.text}]}));
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
+      method: 'POST', 
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+          contents, 
+          systemInstruction: {parts: [{text: systemPrompt}]}
+      })
+    });
+
+    const data = await res.json();
+    if(!res.ok){
+      const errMsg = data?.error?.message || `HTTP ${res.status}`;
+      let dica = '';
+      if(/API key not valid|API_KEY_INVALID/i.test(errMsg)) dica = '<br><br>A chave Gemini configurada é inválida ou expirou. Gere uma nova em <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--cyan);text-decoration:underline">aistudio.google.com/app/apikey</a>.';
+      else if(/quota|RESOURCE_EXHAUSTED/i.test(errMsg)) dica = '<br><br>Cota da chave Gemini esgotada. Aguarde o reset ou gere nova chave.';
+      else if(/models\/gemini/i.test(errMsg) && /not found/i.test(errMsg)) dica = '<br><br>O modelo <code>gemini-2.0-flash</code> pode não estar disponível na sua região.';
+      throw new Error(errMsg + dica);
     }
 
-    return `<div class="chat-msg ${dir}">
-      <strong style="font-size:0.65rem;color:${dir === 'outgoing' ? 'var(--brand)' : 'var(--text-secondary)'};display:block;margin-bottom:3px">${nome}</strong>
-      ${m.msg}
-      <div class="msg-time">${t}</div>
-    </div>`;
-  }).join('');
+    const resp = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta';
+    window.iaHistorico.push({role: 'model', text: resp});
 
-  container.scrollTop = container.scrollHeight;
+    const lastBotMsg = document.getElementById('iaMsgs').lastChild;
+    if(lastBotMsg) lastBotMsg.remove();
+    
+    window.adicionarMsgIA('bot', resp.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>'));
+  } catch(e) {
+    const lastBotMsg = document.getElementById('iaMsgs').lastChild;
+    if(lastBotMsg) lastBotMsg.remove();
+    window.adicionarMsgIA('bot', '⚠ Erro na IA: ' + (e.message || e));
+  }
 };
 
-window.enviarMsgEquipe = async function() {
-  const msg = _v('chatInputEquipe');
-  if (!msg) return;
-  await J.db.collection('chat_equipe').add({
-    tenantId:   J.tid,
-    de:         J.fid,
-    para:       'admin',
-    sender:     'equipe',
-    msg,
-    lidaAdmin:  false,
-    lidaEquipe: true,
-    ts:         Date.now()
-  });
-  _sv('chatInputEquipe', '');
+window.iaAnalisarDRE = function() {
+  if(window._sv) window._sv('iaInput', 'Analise o financeiro atual e sugira melhorias e projeções.');
+  else { const el=document.getElementById('iaInput'); if(el) el.value='Analise o financeiro atual e sugira melhorias e projeções.'; }
+  if(window.ir) window.ir('ia');
+  setTimeout(window.iaPerguntar, 200);
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-  const el = _$('chatInputEquipe');
-  if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsgEquipe(); } });
+window.iaAnalisarEstoque = function() {
+  if(window._sv) window._sv('iaInput', 'Quais peças estão em nível crítico para reposição? Sugira ações de compra.');
+  else { const el=document.getElementById('iaInput'); if(el) el.value='Quais peças estão em nível crítico para reposição? Sugira ações de compra.'; }
+  if(window.ir) window.ir('ia');
+  setTimeout(window.iaPerguntar, 200);
+};
+
+window.adicionarMsgIA = function(role, html) {
+  const el = document.getElementById('iaMsgs'); if(!el) return;
+  const div = document.createElement('div'); div.className = 'ia-msg ' + role;
+  if(role === 'bot') div.innerHTML = '<strong>thIAguinho:</strong> ' + html; else div.innerHTML = html;
+  el.appendChild(div); el.scrollTop = el.scrollHeight;
+};
+
+document.getElementById('iaInput')?.addEventListener('keydown', e => {
+  if(e.key === 'Enter') window.iaPerguntar();
 });
+
+/* Powered by thIAguinho Soluções Digitais */

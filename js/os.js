@@ -1,786 +1,723 @@
 /**
- * JARVIS ERP — os.js v3
- * O.S., Kanban, Timeline Rica (Chevron-style), Prioridade, Responsáveis
+ * JARVIS ERP — os.js
+ * Motor de Ordens de Serviço, Kanban Chevron 7 Etapas, WhatsApp B2C, Laudos PDF
+ *
+ * Powered by thIAguinho Soluções Digitais
  */
 
 'use strict';
 
-// ============================================================
-// DASHBOARD
-// ============================================================
-window.renderDashboard = function() {
-  const agora = new Date();
-  const mes   = agora.getMonth(), ano = agora.getFullYear();
+const KANBAN_STATUSES = ['Triagem', 'Orcamento', 'Orcamento_Enviado', 'Aprovado', 'Andamento', 'Pronto', 'Entregue'];
 
-  const fat = J.os
-    .filter(o => o.status === 'Concluido' && o.updatedAt)
-    .reduce((acc, o) => {
-      const d = new Date(o.updatedAt);
-      return (d.getMonth() === mes && d.getFullYear() === ano) ? acc + (o.total || 0) : acc;
-    }, 0);
-
-  _st('kFat',    moeda(fat));
-  _st('kPatio',  J.os.filter(o => !['Cancelado','Concluido'].includes(o.status)).length);
-  _st('kStock',  J.estoque.filter(p => (p.qtd || 0) <= (p.min || 0)).length);
-
-  const vencidos = J.financeiro.filter(f =>
-    f.status === 'Pendente' && f.venc && new Date(f.venc) < agora
-  ).length;
-  _st('kVenc', vencidos);
-
-  // Agenda do dia
-  const hoje = agora.toISOString().split('T')[0];
-  _st('kAgenda', J.agendamentos.filter(a => a.data === hoje && a.status !== 'Convertido').length);
-
-  // Últimas OS
-  const recent = [...J.os].sort((a, b) => (b.updatedAt||'') > (a.updatedAt||'') ? 1 : -1).slice(0, 6);
-  _sh('dashRecentOS', recent.map(o => {
-    const v = J.veiculos.find(x => x.id === o.veiculoId);
-    const c = J.clientes.find(x => x.id === o.clienteId);
-    const mec = J.equipe.find(x => x.id === o.mecId);
-    return `<tr>
-      <td><span class="placa">${v?.placa || '—'}</span></td>
-      <td>${c?.nome || '—'}</td>
-      <td>${mec?.nome || '—'}</td>
-      <td>${badgeStatus(o.status)}</td>
-      <td style="font-family:var(--ff-mono);font-weight:700;color:var(--success)">${moeda(o.total)}</td>
-    </tr>`;
-  }).join('') || tableEmpty(5, '📋', 'Nenhuma O.S. registrada'));
-
-  // Estoque crítico
-  const crit = J.estoque.filter(p => (p.qtd || 0) <= (p.min || 0)).slice(0, 5);
-  _sh('dashAlertStock', crit.map(p => `
-    <tr class="row-critical">
-      <td>${p.desc || p.codigo}</td>
-      <td style="font-family:var(--ff-mono);font-weight:700;color:var(--danger)">${p.qtd || 0}</td>
-      <td style="font-family:var(--ff-mono);color:var(--text-muted)">${p.min || 0}</td>
-      <td>${badgeStatus('Cancelado')}</td>
-    </tr>
-  `).join('') || tableEmpty(4, '✅', 'Estoque em dia'));
-
-  // Atualiza painel de atenção
-  if (window.atualizarPainelAtencao) atualizarPainelAtencao();
+const STATUS_MAP_LEGACY = { 
+    'Aguardando': 'Triagem', 
+    'Concluido': 'Entregue', 
+    'patio': 'Triagem', 
+    'aprovacao': 'Orcamento_Enviado', 
+    'box': 'Andamento', 
+    'faturado': 'Pronto', 
+    'cancelado': 'Cancelado', 
+    'orcamento': 'Orcamento', 
+    'pronto': 'Pronto', 
+    'entregue': 'Entregue',
+    'Triagem': 'Triagem',
+    'Orcamento': 'Orcamento',
+    'Orcamento_Enviado': 'Orcamento_Enviado',
+    'Aprovado': 'Aprovado',
+    'Andamento': 'Andamento',
+    'Pronto': 'Pronto',
+    'Entregue': 'Entregue'
 };
 
-// ============================================================
-// KANBAN
-// ============================================================
-const _KANBAN_STATUS = ['Aguardando','Orcamento','Aprovado','Andamento','Concluido'];
-const _STATUS_COR = {
-  Aguardando: 'var(--text-muted)',
-  Orcamento:  'var(--warn)',
-  Aprovado:   'var(--brand)',
-  Andamento:  '#F97316',
-  Concluido:  'var(--success)'
-};
-const _STATUS_CLASSE = {
-  Aguardando: 'card-triagem',
-  Orcamento:  'card-orcamento',
-  Aprovado:   'card-aprovado',
-  Andamento:  'card-servico',
-  Concluido:  'card-pronto'
+window.escutarOS = function() {
+  db.collection('ordens_servico').where('tenantId', '==', J.tid).onSnapshot(snap => {
+    J.os = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if(typeof window.renderKanban === 'function') window.renderKanban(); 
+    if(typeof window.renderDashboard === 'function') window.renderDashboard(); 
+    if(typeof window.calcComissoes === 'function') window.calcComissoes();
+  });
 };
 
 window.renderKanban = function() {
-  const busca       = (_v('searchOS') || '').toLowerCase();
-  const filtroNicho = _v('filtroNichoKanban');
-  const cols = {}, cnts = {};
-  _KANBAN_STATUS.forEach(s => { cols[s] = []; cnts[s] = 0; });
+  const busca = ($v('searchOS') || '').toLowerCase();
+  const filtroNicho = $v('filtroNichoKanban');
+  const cols = {}; const cnts = {};
+  KANBAN_STATUSES.forEach(s => { cols[s] = []; cnts[s] = 0; });
 
-  J.os.filter(o => o.status !== 'Cancelado').forEach(o => {
-    const v = J.veiculos.find(x => x.id === o.veiculoId);
-    const c = J.clientes.find(x => x.id === o.clienteId);
-    if (busca && !v?.placa?.toLowerCase().includes(busca) && !c?.nome?.toLowerCase().includes(busca)) return;
-    if (filtroNicho && v?.tipo !== filtroNicho) return;
-    if (cols[o.status]) { cols[o.status].push({ os: o, v, c }); cnts[o.status]++; }
+  J.os.filter(o => (o.status || '').toLowerCase() !== 'cancelado').forEach(o => {
+    const stRaw = o.status || 'Triagem';
+    const st = STATUS_MAP_LEGACY[stRaw] || 'Triagem'; 
+    
+    const v = J.veiculos.find(x => x.id === o.veiculoId) || { placa: o.placa, modelo: o.veiculo, tipo: o.tipoVeiculo };
+    const c = J.clientes.find(x => x.id === o.clienteId) || { nome: o.cliente };
+    
+    if (busca && !(v.placa||'').toLowerCase().includes(busca) && !(c.nome||'').toLowerCase().includes(busca) && !(o.placa||'').toLowerCase().includes(busca)) return;
+    if (filtroNicho && v.tipo !== filtroNicho) return;
+    
+    if (cols[st]) { cols[st].push({ os: o, v, c }); cnts[st]++; }
   });
 
-  _KANBAN_STATUS.forEach(s => {
-    const cntEl = _$(`cnt-${s}`); if (cntEl) cntEl.textContent = cnts[s];
-    const colEl = _$(`kb-${s}`);  if (!colEl) return;
+  KANBAN_STATUSES.forEach(s => {
+    const cntEl = $('cnt-' + s); if (cntEl) cntEl.innerText = cnts[s];
+    const colEl = $('kb-' + s); if (!colEl) return;
+    
+    colEl.innerHTML = cols[s].sort((a, b) => new Date(b.os.updatedAt || 0) - new Date(a.os.updatedAt || 0)).map(({ os, v, c }) => {
+      const tipoCls = v?.tipo || 'carro';
+      const tipoLabel = { carro: '🚗 CARRO', moto: '🏍️ MOTO', bicicleta: '🚲 BICICLETA' }[tipoCls] || '🚗 VEÍCULO';
+      const cor = { Triagem: 'var(--muted)', Orcamento: 'var(--warn)', Orcamento_Enviado: 'var(--purple)', Aprovado: 'var(--cyan)', Andamento: '#FF8C00', Pronto: 'var(--success)', Entregue: 'var(--green2)' }[s];
+      
+      const idx = KANBAN_STATUSES.indexOf(s);
+      const sPrev = idx > 0 ? KANBAN_STATUSES[idx - 1] : null;
+      const sNext = idx < KANBAN_STATUSES.length - 1 ? KANBAN_STATUSES[idx + 1] : null;
+      
+      const btnPrev = sPrev ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sPrev}')" title="Mover para ${sPrev}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15 18l-6-6 6-6"/></svg></button>` : '<div></div>';
+      const btnNext = sNext ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sNext}')" title="Mover para ${sNext}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18l6-6-6-6"/></svg></button>` : '<div></div>';
 
-    if (!cols[s].length) {
-      colEl.innerHTML = `<div class="empty-state" style="padding:20px 10px">
-        <div style="font-size:1.2rem;margin-bottom:4px;opacity:0.4">📭</div>
-        <div style="font-size:0.68rem;color:var(--text-muted)">Nenhuma O.S.</div>
-      </div>`;
-      return;
-    }
-
-    colEl.innerHTML = cols[s]
-      .sort((a, b) => {
-        // Prioridade: vermelho > amarelo > verde > sem prioridade
-        const prioOrder = { vermelho: 0, amarelo: 1, verde: 2 };
-        const pa = prioOrder[a.os.prioridade] ?? 3;
-        const pb = prioOrder[b.os.prioridade] ?? 3;
-        if (pa !== pb) return pa - pb;
-        return new Date(b.os.updatedAt || 0) - new Date(a.os.updatedAt || 0);
-      })
-      .map(({ os, v, c }) => {
-        const mec   = J.equipe.find(f => f.id === os.mecId);
-        const prioHTML = os.prioridade && os.prioridade !== 'verde'
-          ? `<div class="prio-badge prio-${os.prioridade}" title="Urgência: ${os.prioridade}"></div>` : '';
-        const prevStatus = _KANBAN_STATUS[_KANBAN_STATUS.indexOf(os.status) - 1];
-        const nextStatus = _KANBAN_STATUS[_KANBAN_STATUS.indexOf(os.status) + 1];
-        const btnPrev = prevStatus && pode('moverStatus')
-          ? `<button class="btn-move-kanban" data-id="${os.id}" data-status="${prevStatus}" title="Voltar" onclick="event.stopPropagation();_moverOSStatus('${os.id}','${prevStatus}')">‹</button>` : '';
-        const btnNext = nextStatus && pode('moverStatus')
-          ? `<button class="btn-move-kanban btn-next" data-id="${os.id}" data-status="${nextStatus}" title="Avançar" onclick="event.stopPropagation();_moverOSStatus('${os.id}','${nextStatus}')">›</button>` : '';
-
-        return `
-          <div class="kanban-card ${_STATUS_CLASSE[os.status] || ''}"
-               onclick="prepOS('edit','${os.id}');openModal('modalOS')"
-               title="${c?.nome || ''} — ${v?.modelo || ''}">
-            ${prioHTML}
-            <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <div style="flex:1;min-width:0">
-                <div class="kanban-card-placa">${v?.placa || 'S/PLACA'}</div>
-                <div class="kanban-card-cliente">${c?.nome || '—'}</div>
-              </div>
-              <div style="display:flex;flex-direction:column;gap:2px;margin-left:4px">
-                ${btnNext}${btnPrev}
-              </div>
-            </div>
-            <div class="kanban-card-desc">${os.desc || 'Sem descrição'}</div>
-            <div class="kanban-card-footer">
-              ${badgeTipo(v?.tipo || 'carro')}
-              <span class="t-caption">${dtBr(os.data)}</span>
-            </div>
-            ${os.total ? `<div style="text-align:right;margin-top:6px;font-family:var(--ff-mono);font-size:0.72rem;color:var(--success);font-weight:700">${moeda(os.total)}</div>` : ''}
-            ${mec ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:3px">🔧 ${mec.nome}</div>` : ''}
-          </div>
-        `;
-      }).join('');
-  });
-};
-
-// Mover OS pelo botão rápido do kanban
-window._moverOSStatus = async function(osId, novoStatus) {
-  if (!pode('moverStatus')) { toastWarn('Sem permissão para mover status'); return; }
-  const os = J.os.find(x => x.id === osId);
-  if (!os) return;
-
-  const tl = [...(os.timeline || [])];
-  tl.push({
-    dt:    dtISO(),
-    user:  J.nome,
-    role:  J.role,
-    tipo:  'status',
-    acao:  `Status: "${os.status}" → "${novoStatus}"`
-  });
-
-  await J.db.collection('ordens_servico').doc(osId).update({
-    status:    novoStatus,
-    updatedAt: dtISO(),
-    timeline:  tl,
-    ..._responsavelPorEtapa(novoStatus)
-  });
-
-  notificarEquipe(`O.S. ${J.veiculos.find(v => v.id === os.veiculoId)?.placa || ''} → ${novoStatus} (${J.nome})`);
-  audit('OS', `Moveu OS ${osId.slice(-6)} → ${novoStatus}`);
-};
-
-// Registra automaticamente o responsável por cada etapa
-function _responsavelPorEtapa(status) {
-  const updates = {};
-  if (status === 'Orcamento')  updates.respOrcamento  = J.nome;
-  if (status === 'Andamento')  updates.respExecucao   = J.nome;
-  if (status === 'Concluido')  updates.respEntrega    = J.nome;
-  return updates;
-}
-
-// ============================================================
-// MODAL O.S. — PREP
-// ============================================================
-window.prepOS = function(mode, id = null) {
-  ['osId','osKm','osDiagnostico','osDescricao','chkObs','chkPneuDia','chkPneuTra','osMaoObra']
-    .forEach(f => _sv(f, f === 'osMaoObra' ? '0' : ''));
-
-  ['chkPainel','chkPressao','chkCarroceria','chkDocumentos'].forEach(f => _ck(f, false));
-  _sv('osStatus',      'Aguardando');
-  _sv('osTipoVeiculo', 'carro');
-  _sv('osPrioridade',  'verde');
-  _sv('osData',        new Date().toISOString().split('T')[0]);
-  _sv('chkComb',       'N/A');
-  _st('osTotalVal',    '0,00');
-  _sv('osTotalHidden', '0');
-  _sh('containerPecasOS', '');
-  _sh('osMediaGrid', '');
-  _sv('osMediaArray', '[]');
-  _sh('osTimelineEl', '');
-  _sv('osTimelineData', '[]');
-  _st('osIdBadge',     'NOVA O.S.');
-  _sh('osResponsaveis', '');
-
-  const btnPDF = _$('btnGerarPDFOS');
-  if (btnPDF) btnPDF.classList.add('hidden');
-  const areaPgto = _$('areaPgtoOS');
-  if (areaPgto) areaPgto.classList.add('hidden');
-
-  // Permissões de edição
-  const podeEditar = pode('editarCamposOS');
-  document.querySelectorAll('.os-edit-only').forEach(el => {
-    el.style.display = podeEditar ? '' : 'none';
-  });
-
-  popularSelects();
-  window._osDetalheAberta = null;
-
-  if (mode === 'edit' && id) {
-    const os = J.os.find(x => x.id === id);
-    if (!os) return;
-    window._osDetalheAberta = id;
-
-    _sv('osId',           os.id);
-    _st('osIdBadge',      'OS #' + os.id.slice(-6).toUpperCase());
-    _sv('osTipoVeiculo',  os.tipoVeiculo    || 'carro');
-    _sv('osStatus',       os.status         || 'Aguardando');
-    _sv('osCliente',      os.clienteId      || '');
-    _sv('osPrioridade',   os.prioridade     || 'verde');
-
-    filtrarVeiculosOS();
-    setTimeout(() => _sv('osVeiculo', os.veiculoId || ''), 80);
-
-    _sv('osMec',          os.mecId          || '');
-    _sv('osData',         os.data           || '');
-    _sv('osKm',           os.km             || '');
-    _sv('osDescricao',    os.desc           || '');
-    _sv('osDiagnostico',  os.diagnostico    || '');
-    _sv('osMaoObra',      os.maoObra        || 0);
-    _sv('chkComb',        os.chkComb        || 'N/A');
-    _sv('chkPneuDia',     os.chkPneuDia     || '');
-    _sv('chkPneuTra',     os.chkPneuTra     || '');
-    _sv('chkObs',         os.chkObs         || '');
-    _ck('chkPainel',      os.chkPainel);
-    _ck('chkPressao',     os.chkPressao);
-    _ck('chkCarroceria',  os.chkCarroceria);
-    _ck('chkDocumentos',  os.chkDocumentos);
-
-    _sv('osMediaArray', JSON.stringify(os.media || []));
-    renderMediaOS();
-    renderTimelineOS(os.timeline || [], os.id);
-    _renderResponsaveis(os);
-
-    if (os.pecas?.length) os.pecas.forEach(p => _renderPecaRow(p));
-    calcOS();
-    verificarStatusOS();
-    if (btnPDF) btnPDF.classList.remove('hidden');
-
-    if (os.status === 'Concluido' && os.pgtoForma) {
-      _sv('osPgtoForma', os.pgtoForma);
-      _sv('osPgtoData',  os.pgtoData || '');
-      checkPgtoOS();
-    }
-  }
-};
-
-// Bloco de responsáveis por etapa (Chevron-style)
-function _renderResponsaveis(os) {
-  const el = _$('osResponsaveis');
-  if (!el) return;
-  const linha = (label, val) => val
-    ? `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
-        <span style="font-family:var(--ff-mono);font-size:0.6rem;color:var(--text-muted);min-width:90px">${label}</span>
-        <span style="font-size:0.82rem;font-weight:600">${val}</span>
-      </div>` : '';
-  el.innerHTML = [
-    linha('Atendimento:',  os.respAtendimento || os.mecNome),
-    linha('Orçamento:',    os.respOrcamento),
-    linha('Execução:',     os.respExecucao),
-    linha('Entrega:',      os.respEntrega),
-  ].filter(Boolean).join('');
-}
-
-// ============================================================
-// TIMELINE RICA (Chevron-style)
-// ============================================================
-window.renderTimelineOS = function(timeline, osId) {
-  const el = _$('osTimelineEl');
-  if (!el) return;
-
-  const tl = [...(timeline || [])].reverse(); // mais recente primeiro
-
-  if (!tl.length) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-sub">Sem registros na timeline</div></div>`;
-    return;
-  }
-
-  el.innerHTML = tl.map((entry, idx) => {
-    const originalIdx = tl.length - 1 - idx; // índice real no array
-    const tipo = entry.tipo || 'log';
-    const iconMap   = { status: '🔄', log: '💬', valor: '💰', midia: '📷', km: '📍', sistema: '⚙️' };
-    const corMap    = { status: 'var(--brand)', log: 'var(--text-secondary)', valor: 'var(--success)', midia: 'var(--info)', km: 'var(--warn)', sistema: 'var(--text-muted)' };
-    const icon      = iconMap[tipo]   || '💬';
-    const cor       = corMap[tipo]    || 'var(--text-secondary)';
-    const isExcluida = (entry.acao || '').startsWith('ATT EXCLUÍDA');
-
-    const podeDeletar = pode('deletarLog') && !isExcluida && tipo !== 'sistema';
-    const btnDel = podeDeletar
-      ? `<button class="tl-del-btn" onclick="_deletarEntradaTimeline('${osId}',${originalIdx})" title="Excluir entrada">✕</button>`
-      : '';
-
-    const pecas  = entry.pecas  ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px">Peças: ${entry.pecas}</div>` : '';
-    const valor  = entry.valor  ? `<div style="font-size:0.75rem;color:var(--success);font-weight:700;margin-top:3px">${moeda(entry.valor)}</div>` : '';
-    const roleTag = entry.role  ? `<span class="badge badge-neutral" style="font-size:0.5rem;margin-left:6px">${_roleLabel(entry.role)}</span>` : '';
-
-    return `
-      <div class="tl-item ${isExcluida ? 'tl-excluida' : ''}">
-        <div class="tl-icon" style="background:rgba(0,0,0,0.2);color:${cor};font-size:0.9rem">${icon}</div>
-        <div class="tl-content">
-          ${btnDel}
-          <div class="tl-header">
-            <span style="font-weight:700;font-size:0.82rem">${entry.user || '—'}${roleTag}</span>
-            <span class="tl-date">${dtHrBr(entry.dt)}</span>
-          </div>
-          <div class="tl-action ${isExcluida ? 'tl-action-excluida' : ''}">${entry.acao || ''}</div>
-          ${pecas}${valor}
+      return `<div class="k-card" style="border-left-color:${cor}" onclick="window.prepOS('edit','${os.id}');abrirModal('modalOS')">
+        <div class="k-placa" style="color:${cor}">${os.placa || v?.placa || 'S/PLACA'}</div>
+        <div class="k-cliente">${os.cliente || c?.nome || 'Cliente não encontrado'}</div>
+        <div class="k-desc">${os.desc || os.relato || 'Sem descrição'}</div>
+        <div class="k-footer">
+          <span class="k-tipo ${tipoCls}">${tipoLabel}</span>
+          <span style="font-family:var(--fm);font-size:0.75rem;color:var(--success);font-weight:700;">${moeda(os.total)}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;border-top:1px solid rgba(255,255,255,0.05);padding-top:4px;">
+          ${btnPrev}
+          <span class="k-date">${dtBr(os.createdAt || os.data)}</span>
+          ${btnNext}
         </div>
       </div>`;
-  }).join('');
-};
-
-// Deletar entrada da timeline
-window._deletarEntradaTimeline = async function(osId, idx) {
-  if (!pode('deletarLog')) { toastWarn('Sem permissão'); return; }
-  const ok = await confirmar('Remover esta entrada da timeline?');
-  if (!ok) return;
-  const os = J.os.find(x => x.id === osId);
-  if (!os) return;
-  const tl = [...(os.timeline || [])];
-  // Marca como excluída em vez de deletar (auditoria)
-  tl[idx] = {
-    ...tl[idx],
-    acao:     `ATT EXCLUÍDA POR: ${J.nome}`,
-    tipo:     'sistema',
-    original: tl[idx].acao
-  };
-  await J.db.collection('ordens_servico').doc(osId).update({ timeline: tl, updatedAt: dtISO() });
-  toastOk('Entrada removida');
-  audit('OS/TIMELINE', `Excluiu entrada da O.S. ${osId.slice(-6)}`);
-};
-
-// Adicionar entrada manual na timeline (form rápido dentro do modal)
-window.adicionarLogTimeline = async function() {
-  const osId = _v('osId');
-  const desc = _v('logDescricao');
-  const pecs = _v('logPecas');
-  const val  = parseFloat(_v('logValor') || 0);
-  if (!desc) { toastWarn('Descreva o serviço'); return; }
-  if (!osId) { toastWarn('Salve a O.S. primeiro'); return; }
-
-  const os = J.os.find(x => x.id === osId);
-  const tl = [...(os?.timeline || [])];
-  const entry = {
-    dt:    dtISO(),
-    user:  J.nome,
-    role:  J.role,
-    tipo:  val > 0 ? 'valor' : 'log',
-    acao:  desc,
-  };
-  if (pecs) entry.pecas = pecs;
-  if (val > 0) entry.valor = val;
-  tl.push(entry);
-
-  await J.db.collection('ordens_servico').doc(osId).update({ timeline: tl, updatedAt: dtISO() });
-  _sv('logDescricao', ''); _sv('logPecas', ''); _sv('logValor', '');
-  toastOk('Registro adicionado!');
-  notificarEquipe(`Novo log na O.S. ${J.veiculos.find(v => v.id === os?.veiculoId)?.placa || ''} (${J.nome})`);
-  audit('OS/LOG', `Adicionou log na O.S. ${osId.slice(-6)}`);
-
-  // Mostra botão de mover status (Chevron-style)
-  const moveArea = _$('postLogActions');
-  if (moveArea) moveArea.classList.remove('hidden');
-};
-
-// ============================================================
-// PEÇAS
-// ============================================================
-window.adicionarPecaOS = function() {
-  const div = document.createElement('div');
-  div.className = 'peca-row';
-  const opts = '<option value="">Selecionar peça...</option>' +
-    J.estoque.filter(p => (p.qtd || 0) > 0).map(p =>
-      `<option value="${p.id}" data-venda="${p.venda || 0}" data-custo="${p.custo || 0}" data-desc="${(p.desc || '').replace(/"/g,'&quot;')}">[${p.qtd}un] ${p.desc} — ${moeda(p.venda)}</option>`
-    ).join('');
-  div.innerHTML = `
-    <select class="select peca-sel" onchange="_selPeca(this)">${opts}</select>
-    <input type="number" class="input peca-qtd"   value="1"  min="1"    oninput="calcOS()">
-    <input type="number" class="input peca-custo" value="0"  step="0.01" oninput="calcOS()">
-    <input type="number" class="input peca-venda" value="0"  step="0.01" oninput="calcOS()">
-    <button type="button" class="btn btn-danger btn-icon" onclick="this.closest('.peca-row').remove();calcOS()">✕</button>
-  `;
-  _$('containerPecasOS').appendChild(div);
-  calcOS();
-};
-
-function _renderPecaRow(p) {
-  const div = document.createElement('div');
-  div.className = 'peca-row';
-  const opts = `<option value="${p.estoqueId || ''}">${p.desc || ''}</option>` +
-    J.estoque.filter(x => (x.qtd || 0) > 0 || x.id === p.estoqueId).map(x =>
-      `<option value="${x.id}" data-venda="${x.venda||0}" data-custo="${x.custo||0}" data-desc="${(x.desc||'').replace(/"/g,'&quot;')}" ${x.id === p.estoqueId ? 'selected' : ''}>[${x.qtd}un] ${x.desc}</option>`
-    ).join('');
-  div.innerHTML = `
-    <select class="select peca-sel" onchange="_selPeca(this)">${opts}</select>
-    <input type="number" class="input peca-qtd"   value="${p.qtd   || 1}" min="1"    oninput="calcOS()">
-    <input type="number" class="input peca-custo" value="${p.custo || 0}" step="0.01" oninput="calcOS()">
-    <input type="number" class="input peca-venda" value="${p.venda || 0}" step="0.01" oninput="calcOS()">
-    <button type="button" class="btn btn-danger btn-icon" onclick="this.closest('.peca-row').remove();calcOS()">✕</button>
-  `;
-  _$('containerPecasOS').appendChild(div);
-}
-
-window._selPeca = function(sel) {
-  const opt = sel.options[sel.selectedIndex];
-  const row = sel.closest('.peca-row');
-  if (!row) return;
-  row.querySelector('.peca-venda').value = opt.dataset.venda || 0;
-  row.querySelector('.peca-custo').value = opt.dataset.custo || 0;
-  calcOS();
-};
-
-window.calcOS = function() {
-  let total = parseFloat(_v('osMaoObra')) || 0;
-  document.querySelectorAll('#containerPecasOS .peca-row').forEach(row => {
-    const qtd   = parseFloat(row.querySelector('.peca-qtd')?.value   || 0);
-    const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
-    total += qtd * venda;
+    }).join('');
   });
-  _st('osTotalVal', total.toFixed(2).replace('.', ','));
-  _sv('osTotalHidden', total);
+};
+
+window.moverStatusOS = async function(id, novoStatus) {
+    await db.collection('ordens_servico').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() });
+    window.toast(`✓ Movido para ${novoStatus.replace('_', ' ')}`);
+    audit('KANBAN', `Moveu OS ${id.slice(-6)} para ${novoStatus}`);
+    
+    if (novoStatus === 'Orcamento_Enviado') {
+        window.enviarWppB2C(id);
+    }
+};
+
+window.enviarWppB2C = function(id) {
+    const os = J.os.find(x => x.id === id);
+    if (!os) return;
+
+    // Busca dados REAIS do cliente no Firebase (J.clientes já carregado)
+    const cli = J.clientes.find(x => x.id === os.clienteId);
+    const veic = J.veiculos.find(x => x.id === os.veiculoId);
+
+    const cel = cli?.wpp || os.celular || '';
+    const cliNome = cli?.nome || os.cliente || 'Cliente';
+    const veicLabel = veic ? `${veic.modelo} (${veic.placa})` : (os.veiculo || 'Veículo');
+
+    if (!cel) { window.toast('⚠ Cliente sem WhatsApp cadastrado', 'warn'); return; }
+
+    const fone = cel.replace(/\D/g, '');
+
+    // ✅ Login e PIN REAIS do cadastro do cliente no Firebase
+    const loginUser = cli?.login || os.placa || cliNome.split(' ')[0].toLowerCase();
+    const pin = cli?.pin || os.pin || '';
+
+    // ✅ Link correto para GitHub Pages
+    const link = 'https://tsvalencio-ia.github.io/oficina1/cliente.html';
+
+    const totalFmt = (os.total || 0).toFixed(2).replace('.', ',');
+
+    const msg =
+        `Olá ${cliNome.split(' ')[0]}! 👋\n\n` +
+        `O orçamento do seu *${veicLabel}* está pronto na *${J.tnome}*.\n\n` +
+        `💰 *Total: R$ ${totalFmt}*\n\n` +
+        `Acesse seu portal exclusivo para aprovar o serviço:\n` +
+        `🔗 Link: ${link}\n` +
+        `👤 Usuário: *${loginUser}*\n` +
+        `🔑 PIN: *${pin}*\n\n` +
+        `_(Em conformidade com a LGPD, seus dados estão protegidos conosco.)_`;
+
+    window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.toast('✓ Redirecionando WhatsApp B2C');
+    audit('WHATSAPP', `Enviou Link/PIN para ${os.placa || veicLabel}`);
+};
+
+let mediaOSAtual = []; 
+let timelineOSAtual = [];
+
+window.prepOS = function(mode, id = null) {
+  ['osId', 'osPlaca', 'osVeiculo', 'osCliente', 'osCelular', 'osCpf', 'osDiagnostico', 'osRelato', 'osDescricao', 'chkObs', 'osKm', 'osData'].forEach(f => { if ($(f)) $(f).value = ''; });
+  ['chkPainel', 'chkPressao', 'chkCarroceria', 'chkDocumentos'].forEach(f => { if ($(f)) $(f).checked = false; });
+  
+  if ($('osStatus')) $('osStatus').value = 'Triagem';
+  if ($('osTipoVeiculo')) $('osTipoVeiculo').value = 'carro';
+  if ($('osData')) $('osData').value = new Date().toISOString().split('T')[0];
+  if ($('containerItensOS')) $('containerItensOS').innerHTML = '';
+  if ($('containerServicosOS')) $('containerServicosOS').innerHTML = '';
+  if ($('containerPecasOS')) $('containerPecasOS').innerHTML = '';
+  if ($('osTotalVal')) $('osTotalVal').innerText = '0,00';
+  if ($('osTotalHidden')) $('osTotalHidden').value = '0';
+  if ($('osMediaGrid')) $('osMediaGrid').innerHTML = ''; 
+  if ($('osMediaArray')) $('osMediaArray').value = '[]';
+  if ($('osTimeline')) $('osTimeline').innerHTML = ''; 
+  if ($('osTimelineData')) $('osTimelineData').value = '[]';
+  if ($('osIdBadge')) $('osIdBadge').innerText = 'NOVA O.S.';
+  if ($('btnGerarPDFOS')) $('btnGerarPDFOS').style.display = 'none'; 
+  if ($('areaPgtoOS')) $('areaPgtoOS').style.display = 'none'; 
+  if ($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = 'none';
+  
+  window.osPecas = [];
+  window.osFotos = [];
+
+  // Limpa também o preview local do batch upload (correção #4)
+  if (typeof window.limparOsMediaPreview === 'function') window.limparOsMediaPreview();
+
+  if (typeof window.popularSelects === 'function') window.popularSelects();
+
+  if (mode === 'add') { 
+      if(typeof window.adicionarServicoOS === 'function') window.adicionarServicoOS(); 
+  }
+
+  if (mode === 'edit' && id) {
+    const o = J.os.find(x => x.id === id);
+    if (!o) return;
+
+    if ($('osId')) $('osId').value = o.id;
+    if ($('osIdBadge')) $('osIdBadge').innerText = 'OS #' + o.id.slice(-6).toUpperCase();
+    if ($('osPlaca')) $('osPlaca').value = o.placa || '';
+    if ($('osTipoVeiculo')) $('osTipoVeiculo').value = o.tipoVeiculo || o.tipo || 'carro';
+    
+    if ($('osCliente')) {
+        $('osCliente').value = o.clienteId || '';
+        if(typeof window.filtrarVeiculosOS === 'function') window.filtrarVeiculosOS(); 
+    }
+    setTimeout(() => { if ($('osVeiculo')) $('osVeiculo').value = o.veiculoId || o.veiculo || ''; }, 100);
+
+    if ($('osMec')) $('osMec').value = o.mecId || ''; 
+    if ($('osCelular')) $('osCelular').value = o.celular || '';
+    if ($('osCpf')) $('osCpf').value = o.cpf || '';
+    if ($('osStatus')) $('osStatus').value = STATUS_MAP_LEGACY[o.status] || o.status || 'Triagem';
+    if ($('osDiagnostico')) $('osDiagnostico').value = o.diagnostico || '';
+    if ($('osRelato')) $('osRelato').value = o.relato || '';
+    if ($('osDescricao')) $('osDescricao').value = o.desc || o.relato || '';
+    if ($('osData')) $('osData').value = o.data || ''; 
+    if ($('osKm')) $('osKm').value = o.km || '';
+    
+    window.osPecas = o.pecas || [];
+    window.osFotos = o.media || o.fotos || [];
+    
+    if(typeof window.renderItensOS === 'function') window.renderItensOS();
+    
+    if (o.servicos && o.servicos.length > 0 && typeof window.renderServicoOSRow === 'function') {
+        o.servicos.forEach(s => window.renderServicoOSRow(s));
+    } else if (o.maoObra > 0 && typeof window.renderServicoOSRow === 'function') {
+        window.renderServicoOSRow({ desc: 'Mão de Obra Geral', valor: o.maoObra });
+    }
+
+    if (o.pecas && o.pecas.length > 0 && typeof window.renderPecaOSRow === 'function') {
+        o.pecas.forEach(p => window.renderPecaOSRow(p));
+    }
+
+    if ($('chkComb')) $('chkComb').value = o.chkComb || 'N/A'; 
+    if ($('chkPneuDia')) $('chkPneuDia').value = o.chkPneuDia || ''; 
+    if ($('chkPneuTra')) $('chkPneuTra').value = o.chkPneuTra || ''; 
+    if ($('chkObs')) $('chkObs').value = o.chkObs || '';
+    
+    if (o.chkPainel && $('chkPainel')) $('chkPainel').checked = true; 
+    if (o.chkPressao && $('chkPressao')) $('chkPressao').checked = true;
+    if (o.chkCarroceria && $('chkCarroceria')) $('chkCarroceria').checked = true;
+    if (o.chkDocumentos && $('chkDocumentos')) $('chkDocumentos').checked = true;
+
+    if($('osTimelineData') && o.timeline) {
+        $('osTimelineData').value = JSON.stringify(o.timeline);
+        window.renderTimelineOS();
+    }
+    
+    if($('osMediaArray')) {
+        $('osMediaArray').value = JSON.stringify(window.osFotos);
+        window.renderMediaOS();
+    }
+    
+    window.calcOSTotal();
+    window.verificarStatusOS();
+    
+    if ($('btnGerarPDFOS')) $('btnGerarPDFOS').style.display = 'block';
+  }
+};
+
+window.adicionarItemOS = function(item = null) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 80px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+    div.innerHTML = `
+        <input class="j-input os-item-desc" value="${item ? item.desc : ''}" placeholder="Descrição">
+        <input type="number" class="j-input os-item-qtd" value="${item ? item.q : 1}" min="1" oninput="window.calcOSTotal()">
+        <input type="number" class="j-input os-item-venda" value="${item ? (item.v || item.venda) : 0}" step="0.01" oninput="window.calcOSTotal()">
+        <select class="j-select os-item-tipo" onchange="window.calcOSTotal()">
+            <option value="peca" ${item && item.t === 'peca' ? 'selected' : ''}>Peça</option>
+            <option value="servico" ${item && item.t === 'servico' ? 'selected' : ''}>M.O.</option>
+        </select>
+        <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+    `;
+    if($('containerItensOS')) $('containerItensOS').appendChild(div);
+};
+
+window.renderItensOS = function() {
+    if (!$('containerItensOS')) return;
+    $('containerItensOS').innerHTML = '';
+    window.osPecas.forEach(p => window.adicionarItemOS(p));
+    window.calcOSTotal();
+};
+
+window.adicionarServicoOS = function() {
+  const sel = document.createElement('div');
+  sel.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  sel.innerHTML = `
+    <input type="text" class="j-input serv-desc" placeholder="Ex: Alinhamento, Troca de Freio..." oninput="window.calcOSTotal()">
+    <input type="number" class="j-input serv-valor" value="0" step="0.01" placeholder="R$ 0,00" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerServicosOS')) $('containerServicosOS').appendChild(sel);
+};
+
+window.renderServicoOSRow = function(s) {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  div.innerHTML = `
+    <input type="text" class="j-input serv-desc" value="${s.desc || ''}" placeholder="Descrição do Serviço" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input serv-valor" value="${s.valor || 0}" step="0.01" placeholder="R$ 0,00" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerServicosOS')) $('containerServicosOS').appendChild(div);
+};
+
+window.adicionarPecaOS = function() {
+  const sel = document.createElement('div');
+  sel.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px 32px;gap:8px;align-items:center;';
+  const opts = '<option value="">Selecionar peça...</option>' + J.estoque.filter(p => (p.qtd || 0) > 0).map(p => `<option value="${p.id}" data-venda="${p.venda || 0}" data-desc="${p.desc || ''}">[${p.qtd}un] ${p.desc} — ${moeda(p.venda)}</option>`).join('');
+  sel.innerHTML = `
+    <select class="j-select peca-sel" onchange="window.selecionarPecaOS(this)">${opts}</select>
+    <input type="number" class="j-input peca-qtd" value="1" min="1" placeholder="Qtd" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-custo" value="0" step="0.01" placeholder="Custo" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-venda" value="0" step="0.01" placeholder="Venda" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerPecasOS')) $('containerPecasOS').appendChild(sel); window.calcOSTotal();
+};
+
+window.renderPecaOSRow = function(p) {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px 32px;gap:8px;align-items:center;';
+  const opts = '<option value="">' + p.desc + '</option>' + J.estoque.filter(x => (x.qtd || 0) > 0 || x.id === p.estoqueId).map(x => `<option value="${x.id}" data-venda="${x.venda || 0}" data-desc="${x.desc || ''}" ${x.id === p.estoqueId ? 'selected' : ''}>[${x.qtd}un] ${x.desc}</option>`).join('');
+  div.innerHTML = `
+    <select class="j-select peca-sel" onchange="window.selecionarPecaOS(this)">${opts}</select>
+    <input type="number" class="j-input peca-qtd" value="${p.qtd || p.q || 1}" min="1" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-custo" value="${p.custo || p.c || 0}" step="0.01" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-venda" value="${p.venda || p.v || 0}" step="0.01" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerPecasOS')) $('containerPecasOS').appendChild(div);
+};
+
+window.selecionarPecaOS = function(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  sel.parentElement.querySelector('.peca-venda').value = opt.dataset.venda || 0;
+  window.calcOSTotal();
+};
+
+window.calcOSTotal = function() {
+    let total = 0;
+    
+    document.querySelectorAll('#containerItensOS > div').forEach(div => {
+        const q = parseFloat(div.querySelector('.os-item-qtd')?.value || 0);
+        const v = parseFloat(div.querySelector('.os-item-venda')?.value || 0);
+        total += (q * v);
+    });
+
+    document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+        total += parseFloat(row.querySelector('.serv-valor')?.value || 0);
+    });
+  
+    document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+        const qtd = parseFloat(row.querySelector('.peca-qtd')?.value || 0);
+        const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
+        total += qtd * venda;
+    });
+
+    if ($('osTotalVal')) $('osTotalVal').innerText = total.toFixed(2).replace('.', ',');
+    if ($('osTotalHidden')) $('osTotalHidden').value = total;
 };
 
 window.verificarStatusOS = function() {
-  const s = _v('osStatus');
-  const area = _$('areaPgtoOS');
-  if (area) area.classList.toggle('hidden', s !== 'Concluido');
+  const s = $v('osStatus');
+  if($('areaPgtoOS')) $('areaPgtoOS').style.display = (s === 'Pronto' || s === 'Entregue' || s === 'pronto' || s === 'entregue') ? 'block' : 'none';
+  if($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = (s === 'Orcamento_Enviado' || s === 'orcamento' || s === 'aprovacao') && $v('osId') ? 'flex' : 'none';
 };
 
 window.checkPgtoOS = function() {
-  const f = _v('osPgtoForma');
-  const parDiv = _$('divParcelasOS');
-  if (parDiv) parDiv.classList.toggle('hidden', !['Crédito Parcelado','Boleto'].includes(f));
+  const f = $v('osPgtoForma');
+  if($('divParcelasOS')) $('divParcelasOS').style.display = (f === 'Crédito Parcelado' || f === 'Boleto') ? 'block' : 'none';
 };
 
-// ============================================================
-// CLOUDINARY MÍDIA
-// ============================================================
-window.uploadOsMedia = async function() {
-  const file = _$('osFileInput')?.files[0];
-  if (!file) { toastWarn('Selecione um arquivo'); return; }
+window.salvarOS = async function() {
+  const osId = $v('osId');
+  if ($('osPlaca') && !$v('osPlaca')) { window.toast('⚠ Preencha a Placa', 'warn'); return; }
+  if ($('osCliente') && $('osVeiculo') && !$v('osCliente') && !$v('osVeiculo')) { window.toast('⚠ Selecione cliente e veículo', 'warn'); return; }
 
-  setLoading('btnUploadMedia', true, 'Enviando...');
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', J.cloudPreset);
-    const res  = await fetch(`https://api.cloudinary.com/v1_1/${J.cloudName}/auto/upload`, { method:'POST', body:fd });
-    const data = await res.json();
-    if (!data.secure_url) throw new Error(data.error?.message || 'Upload falhou');
+  const itens = [];
+  document.querySelectorAll('#containerItensOS > div').forEach(div => {
+    const desc = div.querySelector('.os-item-desc').value.trim();
+    const q = parseFloat(div.querySelector('.os-item-qtd').value || 0);
+    const v = parseFloat(div.querySelector('.os-item-venda').value || 0);
+    const t = div.querySelector('.os-item-tipo').value;
+    if (desc && q > 0) itens.push({ desc, q, v, t });
+  });
 
-    const media = JSON.parse(_v('osMediaArray') || '[]');
-    media.push({ url: data.secure_url, type: data.resource_type, name: file.name, ts: dtISO() });
-    _sv('osMediaArray', JSON.stringify(media));
-    renderMediaOS();
-    toastOk('Arquivo enviado!');
-  } catch (e) {
-    toastErr('Upload falhou: ' + e.message);
-  } finally {
-    setLoading('btnUploadMedia', false, 'UPLOAD');
-    const fi = _$('osFileInput'); if (fi) fi.value = '';
+  const servicos = []; 
+  let totalMaoObra = 0;
+  document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+    const desc = row.querySelector('.serv-desc')?.value || '';
+    const valor = parseFloat(row.querySelector('.serv-valor')?.value || 0);
+    if (desc || valor > 0) { servicos.push({ desc, valor }); totalMaoObra += valor; }
+  });
+
+  const pecas = [];
+  let totalPecas = 0;
+  document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+    const sel = row.querySelector('.peca-sel'); 
+    const opt = sel?.options[sel.selectedIndex];
+    const qtd = parseFloat(row.querySelector('.peca-qtd')?.value || 1);
+    const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
+    const custo = parseFloat(row.querySelector('.peca-custo')?.value || 0);
+    totalPecas += (qtd * venda);
+    
+    pecas.push({
+      estoqueId: sel?.value, 
+      desc: opt?.dataset.desc || opt?.text || '',
+      qtd: qtd, custo: custo, venda: venda
+    });
+  });
+
+  const totalFormatado = $('osTotalVal') ? $('osTotalVal').innerText.replace(',', '.') : 0;
+  const total = parseFloat(totalFormatado);
+  
+  const payload = {
+    tenantId: J.tid,
+    status: $v('osStatus'),
+    total: total,
+    updatedAt: new Date().toISOString()
+  };
+
+  if ($v('osPlaca')) payload.placa = $v('osPlaca').toUpperCase();
+  if ($v('osVeiculo')) payload.veiculo = $v('osVeiculo');
+  if ($('osVeiculo') && $('osVeiculo').tagName === 'SELECT') payload.veiculoId = $v('osVeiculo');
+  if ($v('osCliente')) payload.cliente = $v('osCliente');
+  if ($('osCliente') && $('osCliente').tagName === 'SELECT') payload.clienteId = $v('osCliente');
+  if ($v('osCelular')) payload.celular = $v('osCelular');
+  if ($v('osCpf')) payload.cpf = $v('osCpf');
+  if ($v('osDiagnostico')) payload.diagnostico = $v('osDiagnostico');
+  if ($v('osRelato')) payload.relato = $v('osRelato');
+  if ($v('osDescricao')) payload.desc = $v('osDescricao');
+  if ($v('osMec')) payload.mecId = $v('osMec');
+  if ($v('osData')) payload.data = $v('osData');
+  if ($v('osKm')) payload.km = $v('osKm');
+  
+  if (itens.length > 0) payload.pecasLegacy = itens;
+  if (servicos.length > 0) payload.servicos = servicos;
+  if (pecas.length > 0) payload.pecas = pecas;
+  payload.maoObra = totalMaoObra;
+
+  const tl = JSON.parse($('osTimelineData')?.value || '[]');
+  tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `${osId ? 'Editou' : 'Abriu'} O.S. — Status: ${$v('osStatus')}` });
+  payload.timeline = tl;
+  
+  if ($('osMediaArray')) {
+      payload.media = JSON.parse($('osMediaArray').value || '[]');
   }
+
+  if (($v('osStatus') === 'Pronto' || $v('osStatus') === 'Entregue' || $v('osStatus') === 'pronto' || $v('osStatus') === 'entregue') && payload.mecId) {
+      const mec = J.equipe.find(f => f.id === payload.mecId);
+      if (mec) {
+        const percServico = parseFloat(mec.comissaoServico || mec.comissao || 0);
+        const percPeca = parseFloat(mec.comissaoPeca || 0);
+        
+        const valComServico = totalMaoObra * (percServico / 100);
+        const valComPeca = totalPecas * (percPeca / 100);
+        const valComTotal = valComServico + valComPeca;
+
+        if (valComTotal > 0) {
+            db.collection('financeiro').add({
+                tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
+                desc: `Comissão (Serv: ${moeda(valComServico)} | Peça: ${moeda(valComPeca)}) — O.S. ${payload.placa || ''}`,
+                valor: valComTotal, pgto: 'A Combinar', venc: new Date().toISOString().split('T')[0],
+                createdAt: new Date().toISOString(), isComissao: true, mecId: payload.mecId, vinculo: `E_${payload.mecId}`
+            });
+        }
+      }
+      
+      const formasPagas = ['Dinheiro', 'PIX', 'Débito', 'Crédito à Vista'];
+      payload.pgtoForma = $v('osPgtoForma'); 
+      payload.pgtoData = $v('osPgtoData');
+      
+      if(payload.pgtoForma && payload.pgtoData) {
+        const statusFin = formasPagas.includes(payload.pgtoForma) ? 'Pago' : 'Pendente';
+        const parcelas = parseInt($v('osPgtoParcelas') || 1);
+        const valorParc = payload.total / parcelas;
+        
+        for (let i = 0; i < parcelas; i++) {
+          const d = new Date(payload.pgtoData || new Date()); 
+          d.setMonth(d.getMonth() + i);
+          db.collection('financeiro').add({
+            tenantId: J.tid, tipo: 'Entrada', status: statusFin,
+            desc: `O.S. ${payload.placa || J.veiculos.find(v => v.id === payload.veiculoId)?.placa || ''} — ${J.clientes.find(c => c.id === payload.clienteId)?.nome || payload.cliente || ''} ${parcelas > 1 ? `(${i + 1}/${parcelas})` : ''}`,
+            valor: valorParc, pgto: payload.pgtoForma, venc: d.toISOString().split('T')[0],
+            createdAt: new Date().toISOString()
+          });
+        }
+        
+        for (const p of pecas) {
+          if (p.estoqueId) {
+            const item = J.estoque.find(x => x.id === p.estoqueId);
+            if (item) db.collection('estoqueItems').doc(p.estoqueId).update({ qtd: Math.max(0, (item.qtd || 0) - p.qtd) });
+          }
+        }
+      }
+  }
+
+  if (osId) {
+    await db.collection('ordens_servico').doc(osId).update(payload);
+    window.toast('✓ O.S. ATUALIZADA');
+    audit('OS', `Editou OS ${osId.slice(-6)}`);
+  } else {
+    payload.createdAt = new Date().toISOString();
+    payload.pin = Math.floor(1000 + Math.random() * 9000).toString(); 
+    const ref = await db.collection('ordens_servico').add(payload);
+    window.toast('✓ O.S. CRIADA');
+    audit('OS', `Criou OS para ${payload.placa || payload.cliente || J.clientes.find(c => c.id === payload.clienteId)?.nome}`);
+  }
+
+  if(typeof window.fecharModal === 'function') window.fecharModal('modalOS');
+};
+
+// ═══════════════════════════════════════════════════════════════
+// GALERIA DE PROVAS — UPLOAD LEGADO (1 por vez) — MANTIDO COMO FALLBACK
+// ═══════════════════════════════════════════════════════════════
+window.uploadOsMedia = async function() {
+  const f = $('osFileInput')?.files[0]; if (!f) return;
+  const btn = $('btnUploadMedia'); btn.innerText = 'ENVIANDO...'; btn.disabled = true;
+  try {
+    const fd = new FormData(); fd.append('file', f); fd.append('upload_preset', J.cloudPreset);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${J.cloudName}/auto/upload`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.secure_url) {
+      const media = JSON.parse($('osMediaArray').value || '[]');
+      media.push({ url: data.secure_url, type: data.resource_type });
+      $('osMediaArray').value = JSON.stringify(media); window.renderMediaOS(); window.toast('✓ UPLOAD CONCLUÍDO');
+    }
+  } catch (e) { window.toast('✕ ERRO UPLOAD', 'err'); }
+  btn.innerText = 'ENVIAR TODAS'; btn.disabled = false;
+};
+
+// ═══════════════════════════════════════════════════════════════
+// CORREÇÃO #4: GALERIA DE PROVAS — BATCH UPLOAD
+// Powered by thIAguinho Soluções Digitais
+// ═══════════════════════════════════════════════════════════════
+
+// Estado local do preview (arquivos ainda não enviados).
+// Acumulativo: o mecânico pode bater foto, bater outra, abrir novamente
+// sem perder as anteriores.
+window._osBatchFiles = [];
+
+// Dispara quando o mecânico seleciona 1+ arquivos no input.
+// Acumula em _osBatchFiles e renderiza grid de prévia.
+window.previewOsMediaBatch = function(input) {
+  if (!input || !input.files || !input.files.length) { window.renderOsMediaPreview(); return; }
+  const novos = Array.from(input.files);
+  window._osBatchFiles = window._osBatchFiles.concat(novos);
+  // Libera o input para que o usuário possa selecionar/tirar mais fotos
+  try { input.value = ''; } catch(e){}
+  window.renderOsMediaPreview();
+};
+
+window.renderOsMediaPreview = function() {
+  const wrap = $('osMediaPreviewLocal');
+  const grid = $('osMediaPreviewGrid');
+  const count = $('osMediaPreviewCount');
+  if (!wrap || !grid) return;
+
+  if (!window._osBatchFiles || !window._osBatchFiles.length) {
+    wrap.style.display = 'none';
+    grid.innerHTML = '';
+    if (count) count.innerText = '0';
+    return;
+  }
+
+  wrap.style.display = 'block';
+  if (count) count.innerText = window._osBatchFiles.length;
+
+  grid.innerHTML = window._osBatchFiles.map((f, i) => {
+    const isVideo = /^video\//.test(f.type || '');
+    const url = URL.createObjectURL(f);
+    const mediaEl = isVideo
+      ? `<video src="${url}" muted></video>`
+      : `<img src="${url}" alt="prévia">`;
+    return `<div class="media-item" data-idx="${i}">
+      ${mediaEl}
+      <button class="media-del" type="button" onclick="window.removerOsMediaPreview(${i})" title="Remover">✕</button>
+    </div>`;
+  }).join('');
+};
+
+window.removerOsMediaPreview = function(idx) {
+  if (!window._osBatchFiles || idx < 0 || idx >= window._osBatchFiles.length) return;
+  window._osBatchFiles.splice(idx, 1);
+  window.renderOsMediaPreview();
+};
+
+window.limparOsMediaPreview = function() {
+  window._osBatchFiles = [];
+  try { const f = $('osFileInput'); if (f) f.value = ''; } catch(e){}
+  window.renderOsMediaPreview();
+  const prog = $('osMediaProgress'); if (prog) { prog.style.display = 'none'; prog.innerText = ''; }
+};
+
+// Sobe todos os arquivos do preview em lote, concatena com os já gravados,
+// atualiza o hidden array e re-renderiza a galeria. Grava no Firestore
+// somente quando o usuário clicar "SALVAR O.S." (via salvarOS).
+window.uploadOsMediaBatch = async function() {
+  // Se o input ainda tem seleção não absorvida, incorpora agora
+  const fInput = $('osFileInput');
+  if (fInput && fInput.files && fInput.files.length) {
+    window._osBatchFiles = (window._osBatchFiles || []).concat(Array.from(fInput.files));
+    try { fInput.value = ''; } catch(e){}
+    window.renderOsMediaPreview();
+  }
+
+  if (!window._osBatchFiles || !window._osBatchFiles.length) {
+    window.toast('⚠ Selecione ao menos um arquivo.', 'warn');
+    return;
+  }
+
+  const btn = $('btnUploadMedia');
+  const prog = $('osMediaProgress');
+  if (btn) { btn.disabled = true; btn.innerText = 'ENVIANDO...'; }
+  if (prog) { prog.style.display = 'inline'; prog.innerText = '0/' + window._osBatchFiles.length; }
+
+  const total = window._osBatchFiles.length;
+  const novasUrls = [];
+  let sucesso = 0, falhas = 0;
+
+  for (let i = 0; i < total; i++) {
+    const f = window._osBatchFiles[i];
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('upload_preset', J.cloudPreset);
+    try {
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${J.cloudName}/auto/upload`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data && data.secure_url) {
+        novasUrls.push({ url: data.secure_url, type: data.resource_type || 'image' });
+        sucesso++;
+      } else {
+        falhas++;
+      }
+    } catch (e) {
+      falhas++;
+    }
+    if (prog) prog.innerText = (i + 1) + '/' + total;
+  }
+
+  // Concatena com o que já estava gravado no hidden (em caso de edição de O.S.)
+  const jaSalvo = JSON.parse($('osMediaArray').value || '[]');
+  const final = jaSalvo.concat(novasUrls);
+  $('osMediaArray').value = JSON.stringify(final);
+  window.renderMediaOS();
+
+  // Limpa o preview local (as prévias já viraram itens reais da galeria)
+  window._osBatchFiles = [];
+  window.renderOsMediaPreview();
+
+  if (btn) { btn.disabled = false; btn.innerText = 'ENVIAR TODAS'; }
+  if (prog) { prog.style.display = 'none'; prog.innerText = ''; }
+
+  if (sucesso && !falhas) window.toast(`✓ ${sucesso} arquivo(s) enviado(s). Salve a O.S. para persistir.`);
+  else if (sucesso && falhas) window.toast(`⚠ ${sucesso} ok, ${falhas} falhou. Salve a O.S. para persistir o que deu certo.`, 'warn');
+  else window.toast('✕ Nenhum arquivo enviado.', 'err');
 };
 
 window.renderMediaOS = function() {
-  const media = JSON.parse(_v('osMediaArray') || '[]');
-  if (!media.length) {
-    _sh('osMediaGrid', '<div style="color:var(--text-muted);font-size:0.78rem;padding:8px 0">Nenhum arquivo</div>');
-    return;
+  const media = JSON.parse($('osMediaArray')?.value || '[]');
+  if($('osMediaGrid')) {
+      $('osMediaGrid').innerHTML = media.map((m, i) => `
+        <div class="media-item">
+          ${m.type === 'video' ? `<video src="${m.url}" controls></video>` : `<img src="${m.url}" onclick="window.open('${m.url}')" style="cursor:zoom-in">`}
+          <button class="media-del" onclick="window.removerMediaOS(${i})">✕</button>
+        </div>`).join('');
   }
-  // Lightbox state
-  window._lightboxMedia = media;
-  _sh('osMediaGrid', media.map((m, i) => {
-    const podeDel = pode('deletarMidia');
-    const delBtn  = podeDel ? `<button class="media-del" onclick="_rmMedia(${i})" title="Remover">✕</button>` : '';
-    const thumb   = m.type === 'video'
-      ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--surf-3);font-size:2rem">▶</div>`
-      : `<img src="${m.url}" alt="foto" loading="lazy" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:0.7rem\\'>Indisponível</div>'"  >`;
-    return `<div class="media-item">
-      ${delBtn}
-      <div class="thumbnail-item" onclick="_abrirLightbox(${i})" style="width:100%;height:100%;cursor:pointer">${thumb}</div>
-    </div>`;
-  }).join(''));
 };
 
-window._rmMedia = function(idx) {
-  const media = JSON.parse(_v('osMediaArray') || '[]');
-  media.splice(idx, 1);
-  _sv('osMediaArray', JSON.stringify(media));
-  renderMediaOS();
+window.removerMediaOS = function(idx) {
+  const media = JSON.parse($('osMediaArray').value || '[]');
+  media.splice(idx, 1); $('osMediaArray').value = JSON.stringify(media); window.renderMediaOS();
 };
 
-// ============================================================
-// LIGHTBOX (Chevron-style)
-// ============================================================
-window._abrirLightbox = function(idx) {
-  const media = window._lightboxMedia || [];
-  if (!media[idx]) return;
-  window._lightboxIdx = idx;
-
-  const lb = _$('lightboxOverlay');
-  if (!lb) { window.open(media[idx].url, '_blank'); return; }
-
-  const content = _$('lightboxContent');
-  const m = media[idx];
-  if (m.type === 'video') {
-    content.innerHTML = `<video src="${m.url}" controls style="max-width:100%;max-height:80vh"></video>`;
-  } else {
-    content.innerHTML = `<img src="${m.url}" referrerpolicy="no-referrer" style="max-width:100%;max-height:80vh;object-fit:contain">`;
-  }
-
-  _$('lightboxPrev').style.display = idx > 0 ? 'flex' : 'none';
-  _$('lightboxNext').style.display = idx < media.length - 1 ? 'flex' : 'none';
-
-  const dlBtn = _$('lightboxDownload');
-  if (dlBtn) { dlBtn.href = m.url; dlBtn.download = m.name || `media_${idx}`; }
-
-  lb.classList.remove('hidden');
-  lb.classList.add('flex');
+window.renderTimelineOS = function() {
+  if(!$('osTimeline')) return;
+  const tl = JSON.parse($('osTimelineData')?.value || '[]');
+  $('osTimeline').innerHTML = [...tl].reverse().map(e => `<div class="tl-item"><div class="tl-date">${dtHrBr(e.dt)}</div><div class="tl-user">${e.user}</div><div class="tl-action">${e.acao}</div></div>`).join('');
 };
 
-window._lightboxNav = function(dir) {
-  const idx = (window._lightboxIdx || 0) + dir;
-  const media = window._lightboxMedia || [];
-  if (idx >= 0 && idx < media.length) _abrirLightbox(idx);
-};
+window.gerarPDFOS = async function() {
+  if (typeof window.jspdf === 'undefined') { window.toast('⚠ jsPDF não carregado', 'err'); return; }
+  const { jsPDF } = window.jspdf; const doc = new jsPDF('p', 'mm', 'a4');
+  const pw = doc.internal.pageSize.getWidth(); let y = 15;
+  
+  doc.setFillColor(6, 10, 20); doc.rect(0, 0, pw, 35, 'F');
+  doc.setTextColor(0, 212, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
+  doc.text('J.A.R.V.I.S — LAUDO TÉCNICO', pw / 2, 18, { align: 'center' });
+  doc.setFontSize(9); doc.setTextColor(200, 200, 200);
+  doc.text(J.tnome + ' · ' + new Date().toLocaleDateString('pt-BR'), pw / 2, 27, { align: 'center' });
+  y = 45;
 
-window._fecharLightbox = function() {
-  const lb = _$('lightboxOverlay');
-  if (lb) { lb.classList.add('hidden'); lb.classList.remove('flex'); }
-};
-
-// ============================================================
-// SALVAR O.S.
-// ============================================================
-window.salvarOS = async function() {
-  const osId = _v('osId');
-  if (!_v('osCliente') || !_v('osVeiculo')) { toastWarn('Selecione cliente e veículo'); return; }
-
-  setLoading('btnSalvarOS', true);
-
-  const pecas = [];
-  document.querySelectorAll('#containerPecasOS .peca-row').forEach(row => {
-    const sel   = row.querySelector('.peca-sel');
-    const opt   = sel?.options[sel?.selectedIndex];
-    const qtd   = parseFloat(row.querySelector('.peca-qtd')?.value   || 0);
-    const custo = parseFloat(row.querySelector('.peca-custo')?.value || 0);
-    const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
-    if (qtd > 0) pecas.push({ estoqueId: sel?.value || null, desc: opt?.dataset.desc || opt?.text || '', qtd, custo, venda });
+  doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  doc.text('DADOS DO VEÍCULO E CLIENTE', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 10;
+  
+  const v = J.veiculos.find(x => x.id === $v('osVeiculo'));
+  const c = J.clientes.find(x => x.id === $v('osCliente'));
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.text(`Cliente: ${c?.nome || $v('osCliente') || '-'}  |  WhatsApp: ${c?.wpp || $v('osCelular') || '-'}`, 15, y); y += 7;
+  doc.text(`Veículo: ${v?.modelo || $v('osVeiculo') || '-'}  |  Placa: ${v?.placa || $v('osPlaca') || '-'}  |  KM: ${$v('osKm') || '-'}`, 15, y); y += 12;
+  
+  doc.setFont('helvetica', 'bold'); doc.text('DEFEITO RECLAMADO / SERVIÇO', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 10;
+  doc.setFont('helvetica', 'normal');
+  const descText = $v('osDescricao') || $v('osRelato') || '-';
+  const descLines = doc.splitTextToSize(descText, pw - 30);
+  doc.text(descLines, 15, y); y += descLines.length * 6 + 10;
+  
+  const relRows = [];
+  document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+    const desc = row.querySelector('.serv-desc')?.value || 'Serviço';
+    const val = row.querySelector('.serv-valor')?.value || 0;
+    if (desc || val > 0) relRows.push([desc, '1 (Srv)', 'R$ ' + parseFloat(val).toFixed(2), 'R$ ' + parseFloat(val).toFixed(2)]);
   });
-
-  // Timeline entry de abertura/edição
-  const tl = JSON.parse(_v('osTimelineData') || '[]');
-  tl.push({
-    dt:   dtISO(), user: J.nome, role: J.role,
-    tipo: 'status',
-    acao: `${osId ? 'Editou' : 'Abriu'} O.S. — Status: ${_v('osStatus')}`
+  
+  document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+    const sel = row.querySelector('.peca-sel'); const opt = sel?.options[sel?.selectedIndex];
+    const qtd = row.querySelector('.peca-qtd')?.value || 0;
+    const val = row.querySelector('.peca-venda')?.value || 0;
+    relRows.push([opt?.dataset.desc || opt?.text || '-', qtd, 'R$ ' + parseFloat(val).toFixed(2), 'R$ ' + (parseFloat(qtd) * parseFloat(val)).toFixed(2)]);
   });
-
-  const payload = {
-    tenantId:    J.tid,
-    tipoVeiculo: _v('osTipoVeiculo'),
-    clienteId:   _v('osCliente'),
-    veiculoId:   _v('osVeiculo'),
-    mecId:       _v('osMec') || null,
-    mecNome:     J.equipe.find(f => f.id === _v('osMec'))?.nome || null,
-    data:        _v('osData'),
-    km:          _v('osKm'),
-    desc:        _v('osDescricao'),
-    diagnostico: _v('osDiagnostico'),
-    status:      _v('osStatus'),
-    prioridade:  _v('osPrioridade') || 'verde',
-    maoObra:     parseFloat(_v('osMaoObra') || 0),
-    total:       parseFloat(_v('osTotalHidden') || 0),
-    pecas,
-    media:       JSON.parse(_v('osMediaArray') || '[]'),
-    chkComb:     _v('chkComb'),
-    chkPneuDia:  _v('chkPneuDia'),
-    chkPneuTra:  _v('chkPneuTra'),
-    chkObs:      _v('chkObs'),
-    chkPainel:    _chk('chkPainel'),
-    chkPressao:   _chk('chkPressao'),
-    chkCarroceria:_chk('chkCarroceria'),
-    chkDocumentos:_chk('chkDocumentos'),
-    timeline:    tl,
-    updatedAt:   dtISO(),
-    // Registra responsável pela etapa atual
-    ..._responsavelPorEtapa(_v('osStatus')),
-    respAtendimento: osId ? undefined : J.nome // só na criação
-  };
-
-  try {
-    if (_v('osStatus') === 'Concluido' && _v('osPgtoForma')) {
-      await _processarConclusao(payload, osId);
-    }
-    if (_v('osProxRev') || _v('osProxKm')) {
-      await J.db.collection('agendamentos').add({
-        tenantId: J.tid, clienteId: payload.clienteId, veiculoId: payload.veiculoId,
-        data: _v('osProxRev') || '', km: _v('osProxKm') || '',
-        servico: 'Revisão Programada', status: 'Agendado', createdAt: dtISO()
-      });
-    }
-
-    const veiculo = J.veiculos.find(v => v.id === payload.veiculoId);
-    if (osId) {
-      await J.db.collection('ordens_servico').doc(osId).update(payload);
-      toastOk('O.S. atualizada!');
-      notificarEquipe(`O.S. ${veiculo?.placa || ''} atualizada por ${J.nome}`);
-    } else {
-      payload.createdAt = dtISO();
-      const ref = await J.db.collection('ordens_servico').add(payload);
-      toastOk('O.S. criada — #' + ref.id.slice(-6).toUpperCase());
-      notificarEquipe(`Nova O.S. ${veiculo?.placa || ''} criada por ${J.nome}`);
-    }
-    closeModal('modalOS');
-    audit('OS', `${osId ? 'Editou' : 'Criou'} O.S. ${payload.veiculoId}`);
-  } catch (e) {
-    toastErr('Erro: ' + e.message);
-  } finally {
-    setLoading('btnSalvarOS', false, 'SALVAR O.S.');
+  
+  if (relRows.length) {
+    doc.setFont('helvetica', 'bold'); doc.text('ORÇAMENTO DETALHADO', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 8;
+    doc.autoTable({ startY: y, head: [['Descrição', 'Qtd', 'Valor Unit.', 'Subtotal']], body: relRows, theme: 'grid', headStyles: { fillColor: [6, 10, 20], textColor: [0, 212, 255] }, margin: { left: 15, right: 15 } });
+    y = doc.lastAutoTable.finalY + 10;
   }
+  
+  doc.setFillColor(230, 250, 230); doc.rect(pw - 80, y, 65, 16, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0, 100, 0);
+  doc.text('TOTAL: R$ ' + $v('osTotalHidden'), pw - 15, y + 10, { align: 'right' });
+  
+  doc.save(`Laudo_${v?.placa || $v('osPlaca') || 'OS'}_${new Date().getTime()}.pdf`);
+  window.toast('✓ PDF GERADO');
 };
 
-async function _processarConclusao(payload, osId) {
-  const formasPagas = ['Dinheiro','PIX','Débito','Crédito à Vista','Transferência'];
-  payload.pgtoForma = _v('osPgtoForma');
-  payload.pgtoData  = _v('osPgtoData') || new Date().toISOString().split('T')[0];
-  const statusFin   = formasPagas.includes(payload.pgtoForma) ? 'Pago' : 'Pendente';
-  const parcelas    = parseInt(_v('osPgtoParcelas') || 1);
-  const valorParc   = payload.total / parcelas;
-  const veiculo     = J.veiculos.find(v => v.id === payload.veiculoId);
-  const cliente     = J.clientes.find(c => c.id === payload.clienteId);
-  const batch       = J.db.batch();
-
-  for (let i = 0; i < parcelas; i++) {
-    const d = new Date(payload.pgtoData); d.setMonth(d.getMonth() + i);
-    batch.set(J.db.collection('financeiro').doc(), {
-      tenantId: J.tid, tipo: 'Entrada', status: statusFin,
-      desc: `O.S. ${veiculo?.placa||''} — ${cliente?.nome||''} ${parcelas>1?`(${i+1}/${parcelas})`:''}`,
-      valor: valorParc, pgto: payload.pgtoForma,
-      venc: d.toISOString().split('T')[0], osId: osId || null, createdAt: dtISO()
-    });
-  }
-  for (const p of payload.pecas) {
-    if (p.estoqueId) {
-      const item = J.estoque.find(x => x.id === p.estoqueId);
-      if (item) batch.update(J.db.collection('estoqueItems').doc(p.estoqueId), { qtd: Math.max(0,(item.qtd||0)-p.qtd), updatedAt: dtISO() });
-    }
-  }
-  if (payload.mecId) {
-    const mec = J.equipe.find(f => f.id === payload.mecId);
-    if (mec && mec.comissao > 0) {
-      const valCom = payload.total * (mec.comissao / 100);
-      batch.set(J.db.collection('financeiro').doc(), {
-        tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
-        desc: `Comissão ${mec.nome} — O.S. ${veiculo?.placa||''}`,
-        valor: valCom, pgto: 'A Combinar', venc: payload.pgtoData,
-        isComissao: true, mecId: payload.mecId, createdAt: dtISO()
-      });
-    }
-  }
-  await batch.commit();
-
-  if (cliente?.wpp && window.JARVIS_CONST) {
-    const msg = JARVIS_CONST.WPP_MSGS.pronto(cliente.nome, veiculo?.modelo || veiculo?.placa || 'veículo', J.tnome);
-    setTimeout(() => {
-      if (confirm(`Enviar WhatsApp para ${cliente.nome}?`)) abrirWpp(cliente.wpp, msg);
-    }, 600);
-  }
-}
-
-// ============================================================
-// AGENDA
-// ============================================================
-window.renderAgenda = function() {
-  const lista = [...J.agendamentos].sort((a, b) => a.data > b.data ? 1 : -1);
-  const hoje  = new Date().toISOString().split('T')[0];
-  _sh('tbAgenda', lista.map(a => {
-    const c   = J.clientes.find(x => x.id === a.clienteId);
-    const v   = J.veiculos.find(x => x.id === a.veiculoId);
-    const mec = J.equipe.find(x => x.id === a.mecId);
-    const atrasado  = a.data < hoje && a.status === 'Agendado';
-    const convertido = a.status === 'Convertido';
-    return `<tr style="${atrasado?'background:rgba(244,63,94,0.03)':''}">
-      <td style="font-family:var(--ff-mono);font-size:0.8rem">${dtBr(a.data)} ${a.hora||''}</td>
-      <td>${c?.nome||'—'}</td>
-      <td>${v?`<span class="placa">${v.placa}</span> ${v.modelo}`:' —'}</td>
-      <td>${a.servico||'—'}</td>
-      <td>${mec?.nome||'—'}</td>
-      <td>${atrasado?badgeStatus('Cancelado'):convertido?badgeStatus('Concluido'):badgeStatus('Aguardando')}</td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" onclick="prepAgenda('edit','${a.id}');openModal('modalAgenda')">✏</button>
-        ${!convertido&&pode('criarOS')?`<button class="btn btn-brand btn-sm" style="margin-left:4px" onclick="converterAgendaOS('${a.id}')">→ O.S.</button>`:''}
-      </td>
-    </tr>`;
-  }).join('') || tableEmpty(7, '📅', 'Sem agendamentos'));
-};
-
-window.prepAgenda = function(mode, id=null) {
-  ['agdId','agdServico'].forEach(f => _sv(f,''));
-  _sv('agdData', new Date().toISOString().split('T')[0]);
-  _sv('agdHora', '09:00');
-  popularSelects();
-  if (mode==='edit'&&id) {
-    const a=J.agendamentos.find(x=>x.id===id); if(!a) return;
-    _sv('agdId',a.id); _sv('agdCliente',a.clienteId||'');
-    filtrarVeicsAgenda();
-    setTimeout(()=>_sv('agdVeiculo',a.veiculoId||''),80);
-    _sv('agdData',a.data||''); _sv('agdHora',a.hora||'');
-    _sv('agdServico',a.servico||''); _sv('agdMec',a.mecId||'');
-  }
-};
-
-window.salvarAgenda = async function() {
-  if(!_v('agdCliente')||!_v('agdData')){toastWarn('Cliente e data obrigatórios');return;}
-  const p={tenantId:J.tid,clienteId:_v('agdCliente'),veiculoId:_v('agdVeiculo'),
-    data:_v('agdData'),hora:_v('agdHora'),servico:_v('agdServico'),
-    mecId:_v('agdMec')||null,status:'Agendado',updatedAt:dtISO()};
-  const id=_v('agdId');
-  if(id) await J.db.collection('agendamentos').doc(id).update(p);
-  else{p.createdAt=dtISO();await J.db.collection('agendamentos').add(p);}
-  toastOk('Agendamento salvo!'); closeModal('modalAgenda');
-  audit('AGENDA',`Agendou ${p.servico} para ${dtBr(p.data)}`);
-};
-
-window.converterAgendaOS = async function(agdId) {
-  const a=J.agendamentos.find(x=>x.id===agdId); if(!a) return;
-  await J.db.collection('agendamentos').doc(agdId).update({status:'Convertido',updatedAt:dtISO()});
-  prepOS('add');
-  setTimeout(()=>{
-    _sv('osCliente',a.clienteId||''); filtrarVeiculosOS();
-    setTimeout(()=>_sv('osVeiculo',a.veiculoId||''),80);
-    _sv('osDescricao',a.servico||'');
-    _sv('osData',a.data||new Date().toISOString().split('T')[0]);
-    openModal('modalOS');
-  },80);
-};
-
-// ============================================================
-// AUDITORIA
-// ============================================================
-window.renderAuditoria = function() {
-  _sh('tbAuditoria', J.auditoria.slice(0,200).map(a=>`
-    <tr>
-      <td style="font-family:var(--ff-mono);font-size:0.7rem;color:var(--text-muted)">${dtHrBr(a.ts)}</td>
-      <td><span class="badge badge-brand">${a.modulo||'—'}</span></td>
-      <td style="font-family:var(--ff-mono);font-size:0.72rem;color:var(--brand)">${a.usuario||'—'}</td>
-      <td><span class="badge badge-neutral" style="font-size:0.5rem">${_roleLabel(a.role||'')}</span></td>
-      <td>${a.acao||'—'}</td>
-    </tr>
-  `).join('')||tableEmpty(5,'🔒','Sem registros de auditoria'));
-};
-
-function _roleLabel(role){
-  const m={admin:'ADMIN',gestor:'GESTOR',atendente:'ATENDENTE',mecanico:'MECÂNICO',gerente:'GERENTE',cliente:'CLIENTE'};
-  return m[role]||(role||'').toUpperCase();
-}
+/* Powered by thIAguinho Soluções Digitais */
