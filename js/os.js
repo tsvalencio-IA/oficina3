@@ -105,7 +105,6 @@ window.enviarWppB2C = function(id) {
     const os = J.os.find(x => x.id === id);
     if (!os) return;
 
-    // Busca dados REAIS do cliente no Firebase (J.clientes já carregado)
     const cli = J.clientes.find(x => x.id === os.clienteId);
     const veic = J.veiculos.find(x => x.id === os.veiculoId);
 
@@ -116,14 +115,9 @@ window.enviarWppB2C = function(id) {
     if (!cel) { window.toast('⚠ Cliente sem WhatsApp cadastrado', 'warn'); return; }
 
     const fone = cel.replace(/\D/g, '');
-
-    // ✅ Login e PIN REAIS do cadastro do cliente no Firebase
     const loginUser = cli?.login || os.placa || cliNome.split(' ')[0].toLowerCase();
     const pin = cli?.pin || os.pin || '';
-
-    // ✅ Link correto para GitHub Pages
     const link = 'https://tsvalencio-ia.github.io/oficina1/cliente.html';
-
     const totalFmt = (os.total || 0).toFixed(2).replace('.', ',');
 
     const msg =
@@ -168,11 +162,8 @@ window.prepOS = function(mode, id = null) {
   window.osPecas = [];
   window.osFotos = [];
 
-  // Limpa também o preview local do batch upload (correção #4)
   if (typeof window.limparOsMediaPreview === 'function') window.limparOsMediaPreview();
-
   if (typeof window.popularSelects === 'function') window.popularSelects();
-
   if (mode === 'add') { 
       if(typeof window.adicionarServicoOS === 'function') window.adicionarServicoOS(); 
   }
@@ -357,6 +348,9 @@ window.checkPgtoOS = function() {
   if($('divParcelasOS')) $('divParcelasOS').style.display = (f === 'Crédito Parcelado' || f === 'Boleto') ? 'block' : 'none';
 };
 
+// =======================================================
+// CIRURGIA NÍVEL PRO: salvarOS() com Auditoria Inteligente
+// =======================================================
 window.salvarOS = async function() {
   const osId = $v('osId');
   if ($('osPlaca') && !$v('osPlaca')) { window.toast('⚠ Preencha a Placa', 'warn'); return; }
@@ -425,13 +419,80 @@ window.salvarOS = async function() {
   if (pecas.length > 0) payload.pecas = pecas;
   payload.maoObra = totalMaoObra;
 
-  const tl = JSON.parse($('osTimelineData')?.value || '[]');
-  tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `${osId ? 'Editou' : 'Abriu'} O.S. — Status: ${$v('osStatus')}` });
-  payload.timeline = tl;
-  
+  // Lógica dos Checklists
+  if ($('chkComb')) payload.chkComb = $v('chkComb');
+  if ($('chkPneuDia')) payload.chkPneuDia = $v('chkPneuDia');
+  if ($('chkPneuTra')) payload.chkPneuTra = $v('chkPneuTra');
+  if ($('chkObs')) payload.chkObs = $v('chkObs');
+  if ($('chkPainel')) payload.chkPainel = $('chkPainel').checked;
+  if ($('chkPressao')) payload.chkPressao = $('chkPressao').checked;
+  if ($('chkCarroceria')) payload.chkCarroceria = $('chkCarroceria').checked;
+  if ($('chkDocumentos')) payload.chkDocumentos = $('chkDocumentos').checked;
+
   if ($('osMediaArray')) {
       payload.media = JSON.parse($('osMediaArray').value || '[]');
   }
+
+  // --- O CÉREBRO DA AUDITORIA (DIFF) ---
+  const tl = JSON.parse($('osTimelineData')?.value || '[]');
+  const funcUser = J.nome || 'Mecânico/Gestor';
+
+  if (osId) {
+      const oldOS = J.os.find(x => x.id === osId) || {};
+      let registouAlgo = false;
+
+      // 1. Mudança de Status
+      if (oldOS.status !== payload.status) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Status alterado para: ${STATUS_MAP_LEGACY[payload.status] || payload.status}` });
+          registouAlgo = true;
+      }
+
+      // 2. Mudança de Diagnóstico
+      const oldDiag = (oldOS.diagnostico || '').trim();
+      const novoDiag = (payload.diagnostico || '').trim();
+      if (novoDiag && novoDiag !== oldDiag) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Diagnóstico Técnico atualizado: "${novoDiag}"` });
+          registouAlgo = true;
+      }
+
+      // 3. Mudança de Checklist
+      let chkMudou = false;
+      if ((oldOS.chkPainel || false) !== (payload.chkPainel || false)) chkMudou = true;
+      if ((oldOS.chkPressao || false) !== (payload.chkPressao || false)) chkMudou = true;
+      if ((oldOS.chkCarroceria || false) !== (payload.chkCarroceria || false)) chkMudou = true;
+      if ((oldOS.chkDocumentos || false) !== (payload.chkDocumentos || false)) chkMudou = true;
+      
+      if (chkMudou) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Checklist de Inspeção Técnica preenchido/atualizado.` });
+          registouAlgo = true;
+      }
+
+      // 4. Novas Fotos/Evidências
+      const oldMediaLength = (oldOS.media || oldOS.fotos || []).length;
+      const newMediaLength = (payload.media || []).length;
+      if (newMediaLength > oldMediaLength) {
+          const adicionadas = newMediaLength - oldMediaLength;
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `${adicionadas} nova(s) evidência(s) visual(is) anexada(s) à Ficha.` });
+          registouAlgo = true;
+      }
+
+      // 5. Orçamento Alterado
+      if (oldOS.total !== payload.total && payload.total > 0) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Orçamento de Peças/Serviços atualizado. Valor: R$ ${payload.total.toFixed(2).replace('.', ',')}` });
+          registouAlgo = true;
+      }
+
+      // Fallback: Se ele salvou e o script não capturou a categoria exata (ex: mudou a KM)
+      if (!registouAlgo) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Detalhes da Ordem de Serviço atualizados.` });
+      }
+  } else {
+      // Nova O.S.
+      tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Deu entrada no veículo e abriu a O.S. (Status: ${STATUS_MAP_LEGACY[payload.status] || payload.status})` });
+  }
+
+  payload.timeline = tl;
+  // --- FIM DA AUDITORIA ---
 
   if (($v('osStatus') === 'Pronto' || $v('osStatus') === 'Entregue' || $v('osStatus') === 'pronto' || $v('osStatus') === 'entregue') && payload.mecId) {
       const mec = J.equipe.find(f => f.id === payload.mecId);
@@ -521,18 +582,12 @@ window.uploadOsMedia = async function() {
 // Powered by thIAguinho Soluções Digitais
 // ═══════════════════════════════════════════════════════════════
 
-// Estado local do preview (arquivos ainda não enviados).
-// Acumulativo: o mecânico pode bater foto, bater outra, abrir novamente
-// sem perder as anteriores.
 window._osBatchFiles = [];
 
-// Dispara quando o mecânico seleciona 1+ arquivos no input.
-// Acumula em _osBatchFiles e renderiza grid de prévia.
 window.previewOsMediaBatch = function(input) {
   if (!input || !input.files || !input.files.length) { window.renderOsMediaPreview(); return; }
   const novos = Array.from(input.files);
   window._osBatchFiles = window._osBatchFiles.concat(novos);
-  // Libera o input para que o usuário possa selecionar/tirar mais fotos
   try { input.value = ''; } catch(e){}
   window.renderOsMediaPreview();
 };
@@ -579,11 +634,7 @@ window.limparOsMediaPreview = function() {
   const prog = $('osMediaProgress'); if (prog) { prog.style.display = 'none'; prog.innerText = ''; }
 };
 
-// Sobe todos os arquivos do preview em lote, concatena com os já gravados,
-// atualiza o hidden array e re-renderiza a galeria. Grava no Firestore
-// somente quando o usuário clicar "SALVAR O.S." (via salvarOS).
 window.uploadOsMediaBatch = async function() {
-  // Se o input ainda tem seleção não absorvida, incorpora agora
   const fInput = $('osFileInput');
   if (fInput && fInput.files && fInput.files.length) {
     window._osBatchFiles = (window._osBatchFiles || []).concat(Array.from(fInput.files));
@@ -625,13 +676,11 @@ window.uploadOsMediaBatch = async function() {
     if (prog) prog.innerText = (i + 1) + '/' + total;
   }
 
-  // Concatena com o que já estava gravado no hidden (em caso de edição de O.S.)
   const jaSalvo = JSON.parse($('osMediaArray').value || '[]');
   const final = jaSalvo.concat(novasUrls);
   $('osMediaArray').value = JSON.stringify(final);
   window.renderMediaOS();
 
-  // Limpa o preview local (as prévias já viraram itens reais da galeria)
   window._osBatchFiles = [];
   window.renderOsMediaPreview();
 
