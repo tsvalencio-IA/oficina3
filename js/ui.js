@@ -15,7 +15,6 @@ window.toast = function(msg, type = 'ok', title = null) {
   const el = document.createElement('div');
   el.className = `toast-j ${t}`;
   el.innerHTML = `${icons[t] || '✓'} ${msg}`;
-  el.textContent = `${icons[t] || '✓'} ${msg}`;
   container.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 400); }, 3500);
 };
@@ -24,6 +23,18 @@ window.toastOk   = msg => toast(msg, 'ok');
 window.toastErr  = msg => toast(msg, 'err');
 window.toastWarn = msg => toast(msg, 'warn');
 window.toastInfo = msg => toast(msg, 'info');
+
+window.setLoading = function(btnId, loading, textoCarregando) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  if (loading) {
+    btn._textoOriginal = btn.innerHTML;
+    btn.innerHTML = `<span class="j-spinner"></span> ${textoCarregando || 'Aguarde...'}`;
+  } else {
+    btn.innerHTML = btn._textoOriginal || textoCarregando || 'OK';
+  }
+};
 
 // ============================================================
 // MODAL SYSTEM (Adaptador Universal)
@@ -41,7 +52,48 @@ window.fecharModal = window.closeModal = function(id) {
 window.fecharTodosModais = window.closeAllModals = function() {
   document.querySelectorAll('.overlay.open').forEach(el => el.classList.remove('open'));
 };
-@@ -85,25 +85,95 @@ window.confirmar = function(msg, titulo = 'Confirmação') {
+
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('overlay')) e.target.classList.remove('open');
+});
+
+// ============================================================
+// TABS E NAVEGAÇÃO (Adaptador Universal)
+// ============================================================
+window.switchTab = function(el, active, ...others) {
+  el.parentElement.querySelectorAll('.mtab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const a = document.getElementById(active); if(a) a.classList.add('active');
+  others.forEach(o => { const oe = document.getElementById(o); if(oe) oe.classList.remove('active'); });
+};
+
+window.ir = window.irSecao = function(key, navEl) {
+  const sectionMap = window.SECTION_MAP || { dashboard:'s-dashboard', agenda:'s-agenda', kanban:'s-kanban', clientes:'s-clientes', estoque:'s-estoque', financeiro:'s-financeiro', equipe:'s-equipe', chat:'s-chat', chatEquipe:'s-chat-equipe', ia:'s-ia', auditoria:'s-auditoria' };
+  const titleMap   = window.TITLE_MAP   || { dashboard:'DASHBOARD', agenda:'AGENDA', kanban:'PÁTIO / O.S.', clientes:'CLIENTES & VEÍCULOS', estoque:'ESTOQUE / NF', financeiro:'FINANCEIRO / DRE', equipe:'EQUIPE & RH', chat:'CRM CHAT', chatEquipe:'CHAT DA EQUIPE', ia:'thIAguinho IA', auditoria:'AUDITORIA' };
+
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const secId = sectionMap[key];
+  if (secId) {
+    const sec = document.getElementById(secId);
+    if (sec) sec.classList.add('active');
+  }
+
+  if (navEl) navEl.classList.add('active');
+  const titleEl = document.getElementById('pageTitle');
+  if (titleEl) titleEl.textContent = titleMap[key] || key.toUpperCase();
+};
+
+// ============================================================
+// LOADERS, BADGES & HELPERS
+// ============================================================
+window.showPageLoader = function(show) {};
+
+window.confirmar = function(msg, titulo = 'Confirmação') {
+  return new Promise(resolve => resolve(window.confirm(`${titulo}\n\n${msg}`)));
+};
+
 window.tableEmpty = function(cols, icon, msg) {
   return `<tr><td colspan="${cols}" style="text-align:center;color:var(--muted);padding:24px;">${icon} ${msg}</td></tr>`;
 };
@@ -67,73 +119,3 @@ window.badgeTipo = function(tipo) {
 window.badgeEntradaSaida = function(tipo) {
   return tipo === 'Entrada' ? `<span class="pill pill-green">${tipo}</span>` : `<span class="pill pill-danger">${tipo}</span>`;
 };
-
-window.escHtml = function(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-};
-
-window.safeOpenExternal = function(url, target = '_blank') {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error('URL bloqueada por protocolo inválido');
-    }
-    window.open(parsed.toString(), target, 'noopener,noreferrer');
-    return true;
-  } catch (err) {
-    window.reportRuntimeError && reportRuntimeError('safeOpenExternal', err, { url });
-    window.toastWarn && toastWarn('Não foi possível abrir o link externo.');
-    return false;
-  }
-};
-
-// ============================================================
-// RUNTIME ERROR GUARD (Hardening)
-// ============================================================
-window.reportRuntimeError = function(contexto, err, extra = {}) {
-  const payload = {
-    contexto,
-    mensagem: err?.message || String(err),
-    stack: err?.stack || null,
-    ...extra
-  };
-  console.error('[JARVIS][RuntimeError]', payload);
-  return payload;
-};
-
-window.installGlobalErrorHandlers = function() {
-  if (window.__jarvisRuntimeGuardInstalled) return;
-  window.__jarvisRuntimeGuardInstalled = true;
-
-  let lastToastAt = 0;
-  const notify = (msg) => {
-    const now = Date.now();
-    if (now - lastToastAt < 5000) return;
-    lastToastAt = now;
-    window.toastWarn && toastWarn(msg);
-  };
-
-  window.addEventListener('error', (event) => {
-    const err = event?.error || new Error(event?.message || 'Erro inesperado');
-    reportRuntimeError('window.error', err, {
-      arquivo: event?.filename || null,
-      linha: event?.lineno || null,
-      coluna: event?.colno || null
-    });
-    notify('Ocorreu um erro inesperado. Atualize a página se necessário.');
-  });
-
-  window.addEventListener('unhandledrejection', (event) => {
-    const reason = event?.reason;
-    const err = reason instanceof Error ? reason : new Error(typeof reason === 'string' ? reason : 'Falha assíncrona não tratada');
-    reportRuntimeError('window.unhandledrejection', err);
-    notify('Falha ao processar uma ação. Tente novamente.');
-  });
-};
-
-window.installGlobalErrorHandlers();

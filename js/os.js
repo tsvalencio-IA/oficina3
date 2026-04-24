@@ -8,10 +8,6 @@
 'use strict';
 
 const KANBAN_STATUSES = ['Triagem', 'Orcamento', 'Orcamento_Enviado', 'Aprovado', 'Andamento', 'Pronto', 'Entregue'];
-const getDB = () => {
-  if (typeof window.getDB === 'function') return window.getDB();
-  throw new Error('window.getDB não está disponível');
-};
 
 const STATUS_MAP_LEGACY = { 
     'Aguardando': 'Triagem', 
@@ -35,7 +31,6 @@ const STATUS_MAP_LEGACY = {
 
 window.escutarOS = function() {
   db.collection('ordens_servico').where('tenantId', '==', J.tid).onSnapshot(snap => {
-  getDB().collection('ordens_servico').where('tenantId', '==', J.tid).onSnapshot(snap => {
     J.os = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if(typeof window.renderKanban === 'function') window.renderKanban(); 
     if(typeof window.renderDashboard === 'function') window.renderDashboard(); 
@@ -67,13 +62,9 @@ window.renderKanban = function() {
     const colEl = $('kb-' + s); if (!colEl) return;
     
     colEl.innerHTML = cols[s].sort((a, b) => new Date(b.os.updatedAt || 0) - new Date(a.os.updatedAt || 0)).map(({ os, v, c }) => {
-      const esc = window.escHtml || (x => String(x ?? ''));
       const tipoCls = v?.tipo || 'carro';
       const tipoLabel = { carro: '🚗 CARRO', moto: '🏍️ MOTO', bicicleta: '🚲 BICICLETA' }[tipoCls] || '🚗 VEÍCULO';
       const cor = { Triagem: 'var(--muted)', Orcamento: 'var(--warn)', Orcamento_Enviado: 'var(--purple)', Aprovado: 'var(--cyan)', Andamento: '#FF8C00', Pronto: 'var(--success)', Entregue: 'var(--green2)' }[s];
-      const placa = esc(os.placa || v?.placa || 'S/PLACA');
-      const cliente = esc(os.cliente || c?.nome || 'Cliente não encontrado');
-      const desc = esc(os.desc || os.relato || 'Sem descrição');
       
       const idx = KANBAN_STATUSES.indexOf(s);
       const sPrev = idx > 0 ? KANBAN_STATUSES[idx - 1] : null;
@@ -82,13 +73,17 @@ window.renderKanban = function() {
       const btnPrev = sPrev ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sPrev}')" title="Mover para ${sPrev}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15 18l-6-6 6-6"/></svg></button>` : '<div></div>';
       const btnNext = sNext ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sNext}')" title="Mover para ${sNext}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18l6-6-6-6"/></svg></button>` : '<div></div>';
 
+      const placaReal  = v?.placa  || os.placa  || 'S/PLACA';
+      const clienteReal = c?.nome  || os.cliente || '—';
+      const modeloReal  = v?.modelo || os.veiculo || '';
+      const boxInfo = os.boxNumero ? `<div style="font-family:var(--fm);font-size:0.62rem;color:#FF8C00;margin-top:2px;">📍 Box ${os.boxNumero}${os.mecNome ? ' — '+os.mecNome : ''}</div>` : '';
+
       return `<div class="k-card" style="border-left-color:${cor}" onclick="window.prepOS('edit','${os.id}');abrirModal('modalOS')">
-        <div class="k-placa" style="color:${cor}">${os.placa || v?.placa || 'S/PLACA'}</div>
-        <div class="k-cliente">${os.cliente || c?.nome || 'Cliente não encontrado'}</div>
+        <div class="k-placa" style="color:${cor}">${placaReal}</div>
+        <div class="k-cliente" style="font-weight:700;color:var(--text);">${clienteReal}</div>
+        ${modeloReal ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:-2px;">${modeloReal}</div>` : ''}
+        ${boxInfo}
         <div class="k-desc">${os.desc || os.relato || 'Sem descrição'}</div>
-        <div class="k-placa" style="color:${cor}">${placa}</div>
-        <div class="k-cliente">${cliente}</div>
-        <div class="k-desc">${desc}</div>
         <div class="k-footer">
           <span class="k-tipo ${tipoCls}">${tipoLabel}</span>
           <span style="font-family:var(--fm);font-size:0.75rem;color:var(--success);font-weight:700;">${moeda(os.total)}</span>
@@ -104,14 +99,20 @@ window.renderKanban = function() {
 };
 
 window.moverStatusOS = async function(id, novoStatus) {
+    // Intercepta: Aprovado → Andamento exige vinculação de Box
+    if (novoStatus === 'Andamento') {
+        const os = J.os.find(x => x.id === id);
+        if (os && os.status !== 'Andamento') {
+            window._osParaBox = id;
+            window.abrirModalBox(id);
+            return;
+        }
+    }
     await db.collection('ordens_servico').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() });
-    await getDB().collection('ordens_servico').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() });
     window.toast(`✓ Movido para ${novoStatus.replace('_', ' ')}`);
     audit('KANBAN', `Moveu OS ${id.slice(-6)} para ${novoStatus}`);
-    
-    if (novoStatus === 'Orcamento_Enviado') {
-        window.enviarWppB2C(id);
-    }
+    if (novoStatus === 'Orcamento_Enviado') window.enviarWppB2C(id);
+    if (novoStatus === 'Pronto') window.notificarClientePronto(id);
 };
 
 window.enviarWppB2C = function(id) {
@@ -136,9 +137,6 @@ window.enviarWppB2C = function(id) {
 
     // ✅ Link correto para GitHub Pages
     const link = 'https://tsvalencio-ia.github.io/oficina1/cliente.html';
-    // ✅ Link dinâmico para o portal do cliente no mesmo projeto
-    const basePath = window.location.pathname.replace(/[^/]*$/, '');
-    const link = `${window.location.origin}${basePath}cliente.html`;
 
     const totalFmt = (os.total || 0).toFixed(2).replace('.', ',');
 
@@ -153,15 +151,241 @@ window.enviarWppB2C = function(id) {
         `_(Em conformidade com a LGPD, seus dados estão protegidos conosco.)_`;
 
     window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
-    const wppUrl = `https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`;
-    if (window.safeOpenExternal) window.safeOpenExternal(wppUrl);
-    else window.open(wppUrl, '_blank', 'noopener,noreferrer');
     window.toast('✓ Redirecionando WhatsApp B2C');
     audit('WHATSAPP', `Enviou Link/PIN para ${os.placa || veicLabel}`);
 };
 
 let mediaOSAtual = []; 
 let timelineOSAtual = [];
+
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICAÇÃO WHATSAPP — VEÍCULO PRONTO
+// ═══════════════════════════════════════════════════════════════
+window.notificarClientePronto = function(id) {
+    const os = J.os.find(x => x.id === id); if (!os) return;
+    const cli = J.clientes.find(x => x.id === os.clienteId);
+    const fone = (cli?.wpp || os.celular || '').replace(/\D/g, '');
+    if (!fone) return;
+    const nome = (cli?.nome || os.cliente || 'Cliente').split(' ')[0];
+    const placa = (os.placa || '').toUpperCase();
+    const msg = `Olá ${nome}! 🎉\n\nSeu veículo *${placa}* está *PRONTO* para retirada na *${J.tnome}*!\n\nPode vir buscar quando quiser. Aguardamos você! 🚘`;
+    if (confirm(`Deseja notificar o cliente sobre o veículo pronto?\n\n${msg.substring(0,120)}...`)) {
+        window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
+        audit('WHATSAPP', `Notificou cliente que ${placa} está pronto`);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// VINCULAÇÃO DE BOX E MECÂNICO (MODAL)
+// ═══════════════════════════════════════════════════════════════
+window.abrirModalBox = function(osId) {
+    window._osParaBox = osId;
+    const os = J.os.find(x => x.id === osId); if (!os) return;
+    const el = $('modalBox'); if (!el) return;
+
+    // Popula select de mecânicos
+    const selMec = $('boxMecanico');
+    if (selMec) {
+        selMec.innerHTML = '<option value="">Não atribuído</option>' +
+            J.equipe.map(f => `<option value="${f.id}" ${f.id === os.mecId ? 'selected' : ''}>${f.nome} (${f.cargo})</option>`).join('');
+    }
+    // Restaura box anterior se existir
+    if ($('boxNumero')) $('boxNumero').value = os.boxNumero || '';
+
+    abrirModal('modalBox');
+};
+
+window.confirmarBox = async function() {
+    const osId = window._osParaBox; if (!osId) return;
+    const boxNum = $v('boxNumero');
+    const mecId  = $v('boxMecanico');
+    if (!boxNum) { window.toast('⚠ Informe o número do Box', 'warn'); return; }
+
+    const os = J.os.find(x => x.id === osId);
+    const mec = J.equipe.find(f => f.id === mecId);
+    const mecNome = mec?.nome || 'Não atribuído';
+
+    const tl = [...(os?.timeline || [])];
+    tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `Vinculou ao Box ${boxNum} — Mecânico: ${mecNome}. Status: Em Serviço` });
+
+    await db.collection('ordens_servico').doc(osId).update({
+        status: 'Andamento',
+        boxNumero: boxNum,
+        mecId: mecId || os?.mecId || '',
+        mecNome: mecNome,
+        timeline: tl,
+        updatedAt: new Date().toISOString()
+    });
+
+    // WhatsApp ao cliente
+    const cli = J.clientes.find(x => x.id === os?.clienteId);
+    const fone = (cli?.wpp || os?.celular || '').replace(/\D/g, '');
+    if (fone) {
+        const nome = (cli?.nome || os?.cliente || 'Cliente').split(' ')[0];
+        const msg = `Olá ${nome}! 🔧\n\nSeu veículo *${os?.placa?.toUpperCase() || ''}* acabou de entrar para serviço na *${J.tnome}*.\n\n📍 Box: *${boxNum}*\n👨‍🔧 Mecânico: *${mecNome}*\n\nAcompanhe o andamento pelo portal!`;
+        if (confirm('Notificar cliente que o serviço iniciou?')) {
+            window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
+        }
+    }
+
+    fecharModal('modalBox');
+    window.toast(`✓ Box ${boxNum} vinculado — ${mecNome}`);
+    audit('KANBAN', `Vinculou OS ${osId.slice(-6)} ao Box ${boxNum} c/ ${mecNome}`);
+};
+
+// ═══════════════════════════════════════════════════════════════
+// CHECKOUT + FATURAMENTO COMPLETO (MODAL)
+// ═══════════════════════════════════════════════════════════════
+window.abrirFaturamento = function() {
+    const osId = $v('osId'); if (!osId) return;
+    const os = J.os.find(x => x.id === osId); if (!os) return;
+    const total = parseFloat($('osTotalHidden')?.value || os.total || 0);
+
+    if ($('fatValorTotal')) $('fatValorTotal').innerText = moeda(total);
+    if ($('fatOsId')) $('fatOsId').value = osId;
+    if ($('fatForma')) $('fatForma').value = 'PIX';
+    if ($('fatParcelas')) $('fatParcelas').value = '1';
+
+    abrirModal('modalFaturamento');
+};
+
+window.processarFaturamento = async function() {
+    const osId = $v('fatOsId'); if (!osId) return;
+    const os = J.os.find(x => x.id === osId); if (!os) return;
+
+    const forma = $v('fatForma');
+    const nParcelas = parseInt($v('fatParcelas') || 1);
+    const total = os.total || 0;
+    const valorParc = total / nParcelas;
+    const hoje = new Date().toISOString().split('T')[0];
+
+    const formasPagas = ['Dinheiro', 'PIX', 'Débito', 'Crédito à Vista'];
+    const statusPgto = formasPagas.includes(forma) ? 'Pago' : 'Pendente';
+
+    try {
+        const batch = db.batch();
+
+        // 1. Gera títulos financeiros parcelados
+        for (let i = 0; i < nParcelas; i++) {
+            const dv = new Date(hoje);
+            dv.setMonth(dv.getMonth() + i);
+            const c = J.clientes.find(x => x.id === os.clienteId);
+            const v = J.veiculos.find(x => x.id === os.veiculoId);
+            const descFin = nParcelas > 1
+                ? `O.S. ${v?.placa || os.placa || ''} — ${c?.nome || os.cliente || ''} (${i+1}/${nParcelas})`
+                : `O.S. ${v?.placa || os.placa || ''} — ${c?.nome || os.cliente || ''}`;
+            batch.set(db.collection('financeiro').doc(), {
+                tenantId: J.tid, tipo: 'Entrada', status: statusPgto,
+                desc: descFin, valor: valorParc, pgto: forma,
+                venc: dv.toISOString().split('T')[0],
+                createdAt: new Date().toISOString()
+            });
+        }
+
+        // 2. Baixa de estoque das peças
+        const pecas = os.pecas || [];
+        for (const p of pecas) {
+            if (p.estoqueId && !os.baixaEstoqueFeita) {
+                const item = J.estoque.find(x => x.id === p.estoqueId);
+                if (item) {
+                    batch.update(db.collection('estoqueItems').doc(p.estoqueId), {
+                        qtd: Math.max(0, (item.qtd || 0) - (p.qtd || 1))
+                    });
+                }
+            }
+        }
+
+        // 3. Comissão do mecânico
+        const mec = J.equipe.find(f => f.id === os.mecId);
+        if (mec) {
+            const percMO = parseFloat(mec.comissaoServico || mec.comissao || 0);
+            const percPc = parseFloat(mec.comissaoPeca || 0);
+            const totalMO = (os.servicos || []).reduce((a, s) => a + (s.valor || 0), 0) + (os.maoObra || 0);
+            const totalPc = (os.pecas || []).reduce((a, p) => a + ((p.qtd || 1) * (p.venda || 0)), 0);
+            const valCom = (totalMO * percMO / 100) + (totalPc * percPc / 100);
+            if (valCom > 0) {
+                batch.set(db.collection('financeiro').doc(), {
+                    tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
+                    desc: `Comissão ${mec.nome} — O.S. ${os.placa || ''}`,
+                    valor: valCom, pgto: 'A Combinar',
+                    venc: hoje, createdAt: new Date().toISOString(),
+                    isComissao: true, mecId: os.mecId, vinculo: `E_${os.mecId}`
+                });
+            }
+        }
+
+        // 4. Atualiza OS para Entregue
+        const tl = [...(os.timeline || [])];
+        tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `CHECKOUT REALIZADO — ${nParcelas}x ${forma} — R$ ${total.toFixed(2)}. Estoque baixado.` });
+        batch.update(db.collection('ordens_servico').doc(osId), {
+            status: 'Entregue', baixaEstoqueFeita: true,
+            pgtoForma: forma, pgtoData: hoje,
+            timeline: tl, updatedAt: new Date().toISOString()
+        });
+
+        await batch.commit();
+
+        audit('FATURAMENTO', `Checkout OS ${os.placa || osId.slice(-6)} — ${nParcelas}x ${forma} — ${moeda(total)}`);
+        window.toast(`✓ CHECKOUT CONCLUÍDO — ${moeda(total)}`, 'ok');
+        fecharModal('modalFaturamento');
+        fecharModal('modalOS');
+
+        // WhatsApp de confirmação
+        const cli = J.clientes.find(x => x.id === os.clienteId);
+        const fone = (cli?.wpp || os.celular || '').replace(/\D/g, '');
+        if (fone) {
+            const nome = (cli?.nome || os.cliente || 'Cliente').split(' ')[0];
+            const msg = `Olá ${nome}! ✅\n\nPassagem pela *${J.tnome}* concluída com sucesso!\n\n🚘 Veículo: *${os.placa?.toUpperCase() || ''}*\n💰 Total: *${moeda(total)}*\n💳 Pagamento: ${forma}${nParcelas > 1 ? ` (${nParcelas}x)` : ''}\n\nObrigado pela confiança! 🙏`;
+            if (confirm('Enviar comprovante para o cliente via WhatsApp?')) {
+                window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
+            }
+        }
+
+    } catch (e) {
+        window.toast('✕ Erro no checkout: ' + e.message, 'err');
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// EXCLUIR O.S. COM LIXEIRA ANTIFRAUDE (JUSTIFICATIVA OBRIGATÓRIA)
+// ═══════════════════════════════════════════════════════════════
+window.deletarOS = async function() {
+    const osId = $v('osId'); if (!osId) return;
+
+    // Somente admin/gestor
+    if (J.role !== 'admin' && J.role !== 'gestor' && J.role !== 'gerente') {
+        window.toast('⛔ Apenas gestores podem excluir O.S.', 'err'); return;
+    }
+
+    const os = J.os.find(x => x.id === osId);
+    const placa = os?.placa || osId.slice(-6).toUpperCase();
+
+    const motivo = prompt(
+        `⚠ ATENÇÃO — EXCLUSÃO PERMANENTE\n\nO.S. da placa: ${placa}\n\nDigite a JUSTIFICATIVA OBRIGATÓRIA (ficará gravada na trilha de auditoria antifraude):`
+    );
+    if (!motivo || motivo.trim() === '') {
+        window.toast('⛔ Operação cancelada. A justificativa é obrigatória.', 'err'); return;
+    }
+
+    try {
+        // 1. Grava na lixeira de auditoria ANTES de deletar
+        await db.collection('lixeira_auditoria').add({
+            tenantId: J.tid,
+            modulo: 'OS — EXCLUSÃO',
+            acao: `O.S. da placa ${placa} excluída. Justificativa: ${motivo}`,
+            usuario: J.nome,
+            placaOriginal: placa,
+            osSnapshot: os || {},
+            ts: new Date().toISOString()
+        });
+        // 2. Deleta a OS
+        await db.collection('ordens_servico').doc(osId).delete();
+        window.toast(`✓ O.S. ${placa} excluída. Auditoria registrada.`);
+        fecharModal('modalOS');
+    } catch (e) {
+        window.toast('✕ Erro ao excluir: ' + e.message, 'err');
+    }
+};
 
 window.prepOS = function(mode, id = null) {
   ['osId', 'osPlaca', 'osVeiculo', 'osCliente', 'osCelular', 'osCpf', 'osDiagnostico', 'osRelato', 'osDescricao', 'chkObs', 'osKm', 'osData'].forEach(f => { if ($(f)) $(f).value = ''; });
@@ -181,7 +405,283 @@ window.prepOS = function(mode, id = null) {
   if ($('osTimelineData')) $('osTimelineData').value = '[]';
   if ($('osIdBadge')) $('osIdBadge').innerText = 'NOVA O.S.';
   if ($('btnGerarPDFOS')) $('btnGerarPDFOS').style.display = 'none'; 
-@@ -422,96 +433,96 @@ window.salvarOS = async function() {
+  if ($('areaPgtoOS')) $('areaPgtoOS').style.display = 'none'; 
+  if ($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = 'none';
+  
+  window.osPecas = [];
+  window.osFotos = [];
+
+  // Limpa também o preview local do batch upload (correção #4)
+  if (typeof window.limparOsMediaPreview === 'function') window.limparOsMediaPreview();
+
+  if (typeof window.popularSelects === 'function') window.popularSelects();
+
+  if (mode === 'add') { 
+      if(typeof window.adicionarServicoOS === 'function') window.adicionarServicoOS(); 
+  }
+
+  if (mode === 'edit' && id) {
+    const o = J.os.find(x => x.id === id);
+    if (!o) return;
+
+    if ($('osId')) $('osId').value = o.id;
+    if ($('osIdBadge')) $('osIdBadge').innerText = 'OS #' + o.id.slice(-6).toUpperCase();
+    if ($('osPlaca')) $('osPlaca').value = o.placa || '';
+    if ($('osTipoVeiculo')) $('osTipoVeiculo').value = o.tipoVeiculo || o.tipo || 'carro';
+    
+    if ($('osCliente')) {
+        $('osCliente').value = o.clienteId || '';
+        if(typeof window.filtrarVeiculosOS === 'function') window.filtrarVeiculosOS(); 
+    }
+    setTimeout(() => { if ($('osVeiculo')) $('osVeiculo').value = o.veiculoId || o.veiculo || ''; }, 100);
+
+    if ($('osMec')) $('osMec').value = o.mecId || ''; 
+    if ($('osCelular')) $('osCelular').value = o.celular || '';
+    if ($('osCpf')) $('osCpf').value = o.cpf || '';
+    if ($('osStatus')) $('osStatus').value = STATUS_MAP_LEGACY[o.status] || o.status || 'Triagem';
+    if ($('osDiagnostico')) $('osDiagnostico').value = o.diagnostico || '';
+    if ($('osRelato')) $('osRelato').value = o.relato || '';
+    if ($('osDescricao')) $('osDescricao').value = o.desc || o.relato || '';
+    if ($('osData')) $('osData').value = o.data || ''; 
+    if ($('osKm')) $('osKm').value = o.km || '';
+    
+    window.osPecas = o.pecas || [];
+    window.osFotos = o.media || o.fotos || [];
+    
+    if(typeof window.renderItensOS === 'function') window.renderItensOS();
+    
+    if (o.servicos && o.servicos.length > 0 && typeof window.renderServicoOSRow === 'function') {
+        o.servicos.forEach(s => window.renderServicoOSRow(s));
+    } else if (o.maoObra > 0 && typeof window.renderServicoOSRow === 'function') {
+        window.renderServicoOSRow({ desc: 'Mão de Obra Geral', valor: o.maoObra });
+    }
+
+    if (o.pecas && o.pecas.length > 0 && typeof window.renderPecaOSRow === 'function') {
+        o.pecas.forEach(p => window.renderPecaOSRow(p));
+    }
+
+    if ($('chkComb')) $('chkComb').value = o.chkComb || 'N/A'; 
+    if ($('chkPneuDia')) $('chkPneuDia').value = o.chkPneuDia || ''; 
+    if ($('chkPneuTra')) $('chkPneuTra').value = o.chkPneuTra || ''; 
+    if ($('chkObs')) $('chkObs').value = o.chkObs || '';
+    
+    if (o.chkPainel && $('chkPainel')) $('chkPainel').checked = true; 
+    if (o.chkPressao && $('chkPressao')) $('chkPressao').checked = true;
+    if (o.chkCarroceria && $('chkCarroceria')) $('chkCarroceria').checked = true;
+    if (o.chkDocumentos && $('chkDocumentos')) $('chkDocumentos').checked = true;
+
+    if($('osTimelineData') && o.timeline) {
+        $('osTimelineData').value = JSON.stringify(o.timeline);
+        window.renderTimelineOS();
+    }
+    
+    if($('osMediaArray')) {
+        $('osMediaArray').value = JSON.stringify(window.osFotos);
+        window.renderMediaOS();
+    }
+    
+    window.calcOSTotal();
+    window.verificarStatusOS();
+    
+    // Exibe info de Box se existir
+    if (o.boxNumero) {
+        const boxInfoEl = $('osBoxInfo');
+        if (boxInfoEl) {
+            const mecBox = J.equipe.find(f => f.id === o.mecId);
+            boxInfoEl.style.display = 'flex';
+            boxInfoEl.innerHTML = `<span style="font-family:var(--fm);font-size:0.7rem;color:#FF8C00;">📍 Box ${o.boxNumero}${mecBox ? ' — '+ mecBox.nome : (o.mecNome ? ' — '+o.mecNome : '')}</span>`;
+        }
+    } else {
+        const boxInfoEl = $('osBoxInfo');
+        if (boxInfoEl) boxInfoEl.style.display = 'none';
+    }
+
+    if ($('btnGerarPDFOS')) $('btnGerarPDFOS').style.display = 'block';
+  }
+};
+
+window.adicionarItemOS = function(item = null) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 80px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+    div.innerHTML = `
+        <input class="j-input os-item-desc" value="${item ? item.desc : ''}" placeholder="Descrição">
+        <input type="number" class="j-input os-item-qtd" value="${item ? item.q : 1}" min="1" oninput="window.calcOSTotal()">
+        <input type="number" class="j-input os-item-venda" value="${item ? (item.v || item.venda) : 0}" step="0.01" oninput="window.calcOSTotal()">
+        <select class="j-select os-item-tipo" onchange="window.calcOSTotal()">
+            <option value="peca" ${item && item.t === 'peca' ? 'selected' : ''}>Peça</option>
+            <option value="servico" ${item && item.t === 'servico' ? 'selected' : ''}>M.O.</option>
+        </select>
+        <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+    `;
+    if($('containerItensOS')) $('containerItensOS').appendChild(div);
+};
+
+window.renderItensOS = function() {
+    if (!$('containerItensOS')) return;
+    $('containerItensOS').innerHTML = '';
+    window.osPecas.forEach(p => window.adicionarItemOS(p));
+    window.calcOSTotal();
+};
+
+window.adicionarServicoOS = function() {
+  const sel = document.createElement('div');
+  sel.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  sel.innerHTML = `
+    <input type="text" class="j-input serv-desc" placeholder="Ex: Alinhamento, Troca de Freio..." oninput="window.calcOSTotal()">
+    <input type="number" class="j-input serv-valor" value="0" step="0.01" placeholder="R$ 0,00" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerServicosOS')) $('containerServicosOS').appendChild(sel);
+};
+
+window.renderServicoOSRow = function(s) {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  div.innerHTML = `
+    <input type="text" class="j-input serv-desc" value="${s.desc || ''}" placeholder="Descrição do Serviço" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input serv-valor" value="${s.valor || 0}" step="0.01" placeholder="R$ 0,00" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerServicosOS')) $('containerServicosOS').appendChild(div);
+};
+
+window.adicionarPecaOS = function() {
+  const sel = document.createElement('div');
+  sel.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px 32px;gap:8px;align-items:center;';
+  const opts = '<option value="">Selecionar peça...</option>' + J.estoque.filter(p => (p.qtd || 0) > 0).map(p => `<option value="${p.id}" data-venda="${p.venda || 0}" data-desc="${p.desc || ''}">[${p.qtd}un] ${p.desc} — ${moeda(p.venda)}</option>`).join('');
+  sel.innerHTML = `
+    <select class="j-select peca-sel" onchange="window.selecionarPecaOS(this)">${opts}</select>
+    <input type="number" class="j-input peca-qtd" value="1" min="1" placeholder="Qtd" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-custo" value="0" step="0.01" placeholder="Custo" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-venda" value="0" step="0.01" placeholder="Venda" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerPecasOS')) $('containerPecasOS').appendChild(sel); window.calcOSTotal();
+};
+
+window.renderPecaOSRow = function(p) {
+  const div = document.createElement('div');
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 80px 90px 90px 32px;gap:8px;align-items:center;';
+  const opts = '<option value="">' + p.desc + '</option>' + J.estoque.filter(x => (x.qtd || 0) > 0 || x.id === p.estoqueId).map(x => `<option value="${x.id}" data-venda="${x.venda || 0}" data-desc="${x.desc || ''}" ${x.id === p.estoqueId ? 'selected' : ''}>[${x.qtd}un] ${x.desc}</option>`).join('');
+  div.innerHTML = `
+    <select class="j-select peca-sel" onchange="window.selecionarPecaOS(this)">${opts}</select>
+    <input type="number" class="j-input peca-qtd" value="${p.qtd || p.q || 1}" min="1" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-custo" value="${p.custo || p.c || 0}" step="0.01" oninput="window.calcOSTotal()">
+    <input type="number" class="j-input peca-venda" value="${p.venda || p.v || 0}" step="0.01" oninput="window.calcOSTotal()">
+    <button type="button" onclick="this.parentElement.remove();window.calcOSTotal()" style="background:rgba(255,59,59,0.1);border:1px solid rgba(255,59,59,0.3);border-radius:2px;color:var(--danger);cursor:pointer;width:32px;height:32px;">✕</button>
+  `;
+  if($('containerPecasOS')) $('containerPecasOS').appendChild(div);
+};
+
+window.selecionarPecaOS = function(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  sel.parentElement.querySelector('.peca-venda').value = opt.dataset.venda || 0;
+  window.calcOSTotal();
+};
+
+window.calcOSTotal = function() {
+    let total = 0;
+    
+    document.querySelectorAll('#containerItensOS > div').forEach(div => {
+        const q = parseFloat(div.querySelector('.os-item-qtd')?.value || 0);
+        const v = parseFloat(div.querySelector('.os-item-venda')?.value || 0);
+        total += (q * v);
+    });
+
+    document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+        total += parseFloat(row.querySelector('.serv-valor')?.value || 0);
+    });
+  
+    document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+        const qtd = parseFloat(row.querySelector('.peca-qtd')?.value || 0);
+        const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
+        total += qtd * venda;
+    });
+
+    if ($('osTotalVal')) $('osTotalVal').innerText = total.toFixed(2).replace('.', ',');
+    if ($('osTotalHidden')) $('osTotalHidden').value = total;
+};
+
+window.verificarStatusOS = function() {
+  const s = $v('osStatus');
+  const osId = $v('osId');
+  // Seção de pagamento: aparece ao marcar Pronto/Entregue
+  if($('areaPgtoOS')) $('areaPgtoOS').style.display = (s === 'Pronto' || s === 'Entregue' || s === 'pronto' || s === 'entregue') ? 'block' : 'none';
+  if($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = (s === 'Orcamento_Enviado' || s === 'orcamento' || s === 'aprovacao') && osId ? 'flex' : 'none';
+  // Botão de Checkout: aparece para Pronto, admin/gestor, OS existente
+  const podeFaturar = osId && (s === 'Pronto' || s === 'Entregue') && (J.role === 'admin' || J.role === 'gestor' || J.role === 'gerente');
+  if($('btnCheckoutOS')) $('btnCheckoutOS').style.display = podeFaturar ? 'flex' : 'none';
+  // Botão excluir: apenas edit + admin/gestor
+  if($('btnDeletarOS')) $('btnDeletarOS').style.display = (osId && (J.role === 'admin' || J.role === 'gestor' || J.role === 'gerente')) ? 'inline-flex' : 'none';
+};
+
+window.checkPgtoOS = function() {
+  const f = $v('osPgtoForma');
+  if($('divParcelasOS')) $('divParcelasOS').style.display = (f === 'Crédito Parcelado' || f === 'Boleto') ? 'block' : 'none';
+};
+
+window.salvarOS = async function() {
+  const osId = $v('osId');
+  if ($('osPlaca') && !$v('osPlaca')) { window.toast('⚠ Preencha a Placa', 'warn'); return; }
+  if ($('osCliente') && $('osVeiculo') && !$v('osCliente') && !$v('osVeiculo')) { window.toast('⚠ Selecione cliente e veículo', 'warn'); return; }
+
+  const itens = [];
+  document.querySelectorAll('#containerItensOS > div').forEach(div => {
+    const desc = div.querySelector('.os-item-desc').value.trim();
+    const q = parseFloat(div.querySelector('.os-item-qtd').value || 0);
+    const v = parseFloat(div.querySelector('.os-item-venda').value || 0);
+    const t = div.querySelector('.os-item-tipo').value;
+    if (desc && q > 0) itens.push({ desc, q, v, t });
+  });
+
+  const servicos = []; 
+  let totalMaoObra = 0;
+  document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+    const desc = row.querySelector('.serv-desc')?.value || '';
+    const valor = parseFloat(row.querySelector('.serv-valor')?.value || 0);
+    if (desc || valor > 0) { servicos.push({ desc, valor }); totalMaoObra += valor; }
+  });
+
+  const pecas = [];
+  let totalPecas = 0;
+  document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+    const sel = row.querySelector('.peca-sel'); 
+    const opt = sel?.options[sel.selectedIndex];
+    const qtd = parseFloat(row.querySelector('.peca-qtd')?.value || 1);
+    const venda = parseFloat(row.querySelector('.peca-venda')?.value || 0);
+    const custo = parseFloat(row.querySelector('.peca-custo')?.value || 0);
+    totalPecas += (qtd * venda);
+    
+    pecas.push({
+      estoqueId: sel?.value, 
+      desc: opt?.dataset.desc || opt?.text || '',
+      qtd: qtd, custo: custo, venda: venda
+    });
+  });
+
+  const totalFormatado = $('osTotalVal') ? $('osTotalVal').innerText.replace(',', '.') : 0;
+  const total = parseFloat(totalFormatado);
+  
+  const payload = {
+    tenantId: J.tid,
+    status: $v('osStatus'),
+    total: total,
+    updatedAt: new Date().toISOString()
+  };
+
+  if ($v('osPlaca')) payload.placa = $v('osPlaca').toUpperCase();
+  if ($v('osVeiculo')) payload.veiculo = $v('osVeiculo');
+  if ($('osVeiculo') && $('osVeiculo').tagName === 'SELECT') payload.veiculoId = $v('osVeiculo');
+  if ($v('osCliente')) payload.cliente = $v('osCliente');
+  if ($('osCliente') && $('osCliente').tagName === 'SELECT') payload.clienteId = $v('osCliente');
+  if ($v('osCelular')) payload.celular = $v('osCelular');
+  if ($v('osCpf')) payload.cpf = $v('osCpf');
+  if ($v('osDiagnostico')) payload.diagnostico = $v('osDiagnostico');
+  if ($v('osRelato')) payload.relato = $v('osRelato');
+  if ($v('osDescricao')) payload.desc = $v('osDescricao');
+  if ($v('osMec')) payload.mecId = $v('osMec');
+  if ($v('osData')) payload.data = $v('osData');
+  if ($v('osKm')) payload.km = $v('osKm');
   
   if (itens.length > 0) payload.pecasLegacy = itens;
   if (servicos.length > 0) payload.servicos = servicos;
@@ -208,7 +708,6 @@ window.prepOS = function(mode, id = null) {
 
         if (valComTotal > 0) {
             db.collection('financeiro').add({
-            getDB().collection('financeiro').add({
                 tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
                 desc: `Comissão (Serv: ${moeda(valComServico)} | Peça: ${moeda(valComPeca)}) — O.S. ${payload.placa || ''}`,
                 valor: valComTotal, pgto: 'A Combinar', venc: new Date().toISOString().split('T')[0],
@@ -230,7 +729,6 @@ window.prepOS = function(mode, id = null) {
           const d = new Date(payload.pgtoData || new Date()); 
           d.setMonth(d.getMonth() + i);
           db.collection('financeiro').add({
-          getDB().collection('financeiro').add({
             tenantId: J.tid, tipo: 'Entrada', status: statusFin,
             desc: `O.S. ${payload.placa || J.veiculos.find(v => v.id === payload.veiculoId)?.placa || ''} — ${J.clientes.find(c => c.id === payload.clienteId)?.nome || payload.cliente || ''} ${parcelas > 1 ? `(${i + 1}/${parcelas})` : ''}`,
             valor: valorParc, pgto: payload.pgtoForma, venc: d.toISOString().split('T')[0],
@@ -242,7 +740,6 @@ window.prepOS = function(mode, id = null) {
           if (p.estoqueId) {
             const item = J.estoque.find(x => x.id === p.estoqueId);
             if (item) db.collection('estoqueItems').doc(p.estoqueId).update({ qtd: Math.max(0, (item.qtd || 0) - p.qtd) });
-            if (item) getDB().collection('estoqueItems').doc(p.estoqueId).update({ qtd: Math.max(0, (item.qtd || 0) - p.qtd) });
           }
         }
       }
@@ -250,14 +747,12 @@ window.prepOS = function(mode, id = null) {
 
   if (osId) {
     await db.collection('ordens_servico').doc(osId).update(payload);
-    await getDB().collection('ordens_servico').doc(osId).update(payload);
     window.toast('✓ O.S. ATUALIZADA');
     audit('OS', `Editou OS ${osId.slice(-6)}`);
   } else {
     payload.createdAt = new Date().toISOString();
     payload.pin = Math.floor(1000 + Math.random() * 9000).toString(); 
     const ref = await db.collection('ordens_servico').add(payload);
-    const ref = await getDB().collection('ordens_servico').add(payload);
     window.toast('✓ O.S. CRIADA');
     audit('OS', `Criou OS para ${payload.placa || payload.cliente || J.clientes.find(c => c.id === payload.clienteId)?.nome}`);
   }
@@ -283,7 +778,114 @@ window.uploadOsMedia = async function() {
   } catch (e) { window.toast('✕ ERRO UPLOAD', 'err'); }
   btn.innerText = 'ENVIAR TODAS'; btn.disabled = false;
 };
-@@ -626,51 +637,51 @@ window.uploadOsMediaBatch = async function() {
+
+// ═══════════════════════════════════════════════════════════════
+// CORREÇÃO #4: GALERIA DE PROVAS — BATCH UPLOAD
+// Powered by thIAguinho Soluções Digitais
+// ═══════════════════════════════════════════════════════════════
+
+// Estado local do preview (arquivos ainda não enviados).
+// Acumulativo: o mecânico pode bater foto, bater outra, abrir novamente
+// sem perder as anteriores.
+window._osBatchFiles = [];
+
+// Dispara quando o mecânico seleciona 1+ arquivos no input.
+// Acumula em _osBatchFiles e renderiza grid de prévia.
+window.previewOsMediaBatch = function(input) {
+  if (!input || !input.files || !input.files.length) { window.renderOsMediaPreview(); return; }
+  const novos = Array.from(input.files);
+  window._osBatchFiles = window._osBatchFiles.concat(novos);
+  // Libera o input para que o usuário possa selecionar/tirar mais fotos
+  try { input.value = ''; } catch(e){}
+  window.renderOsMediaPreview();
+};
+
+window.renderOsMediaPreview = function() {
+  const wrap = $('osMediaPreviewLocal');
+  const grid = $('osMediaPreviewGrid');
+  const count = $('osMediaPreviewCount');
+  if (!wrap || !grid) return;
+
+  if (!window._osBatchFiles || !window._osBatchFiles.length) {
+    wrap.style.display = 'none';
+    grid.innerHTML = '';
+    if (count) count.innerText = '0';
+    return;
+  }
+
+  wrap.style.display = 'block';
+  if (count) count.innerText = window._osBatchFiles.length;
+
+  grid.innerHTML = window._osBatchFiles.map((f, i) => {
+    const isVideo = /^video\//.test(f.type || '');
+    const url = URL.createObjectURL(f);
+    const mediaEl = isVideo
+      ? `<video src="${url}" muted></video>`
+      : `<img src="${url}" alt="prévia">`;
+    return `<div class="media-item" data-idx="${i}">
+      ${mediaEl}
+      <button class="media-del" type="button" onclick="window.removerOsMediaPreview(${i})" title="Remover">✕</button>
+    </div>`;
+  }).join('');
+};
+
+window.removerOsMediaPreview = function(idx) {
+  if (!window._osBatchFiles || idx < 0 || idx >= window._osBatchFiles.length) return;
+  window._osBatchFiles.splice(idx, 1);
+  window.renderOsMediaPreview();
+};
+
+window.limparOsMediaPreview = function() {
+  window._osBatchFiles = [];
+  try { const f = $('osFileInput'); if (f) f.value = ''; } catch(e){}
+  window.renderOsMediaPreview();
+  const prog = $('osMediaProgress'); if (prog) { prog.style.display = 'none'; prog.innerText = ''; }
+};
+
+// Sobe todos os arquivos do preview em lote, concatena com os já gravados,
+// atualiza o hidden array e re-renderiza a galeria. Grava no Firestore
+// somente quando o usuário clicar "SALVAR O.S." (via salvarOS).
+window.uploadOsMediaBatch = async function() {
+  // Se o input ainda tem seleção não absorvida, incorpora agora
+  const fInput = $('osFileInput');
+  if (fInput && fInput.files && fInput.files.length) {
+    window._osBatchFiles = (window._osBatchFiles || []).concat(Array.from(fInput.files));
+    try { fInput.value = ''; } catch(e){}
+    window.renderOsMediaPreview();
+  }
+
+  if (!window._osBatchFiles || !window._osBatchFiles.length) {
+    window.toast('⚠ Selecione ao menos um arquivo.', 'warn');
+    return;
+  }
+
+  const btn = $('btnUploadMedia');
+  const prog = $('osMediaProgress');
+  if (btn) { btn.disabled = true; btn.innerText = 'ENVIANDO...'; }
+  if (prog) { prog.style.display = 'inline'; prog.innerText = '0/' + window._osBatchFiles.length; }
+
+  const total = window._osBatchFiles.length;
+  const novasUrls = [];
+  let sucesso = 0, falhas = 0;
+
+  for (let i = 0; i < total; i++) {
+    const f = window._osBatchFiles[i];
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('upload_preset', J.cloudPreset);
+    try {
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${J.cloudName}/auto/upload`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data && data.secure_url) {
+        novasUrls.push({ url: data.secure_url, type: data.resource_type || 'image' });
+        sucesso++;
+      } else {
+        falhas++;
+      }
+    } catch (e) {
+      falhas++;
+    }
+    if (prog) prog.innerText = (i + 1) + '/' + total;
   }
 
   // Concatena com o que já estava gravado no hidden (em caso de edição de O.S.)
@@ -310,7 +912,6 @@ window.renderMediaOS = function() {
       $('osMediaGrid').innerHTML = media.map((m, i) => `
         <div class="media-item">
           ${m.type === 'video' ? `<video src="${m.url}" controls></video>` : `<img src="${m.url}" onclick="window.open('${m.url}')" style="cursor:zoom-in">`}
-          ${m.type === 'video' ? `<video src="${m.url}" controls></video>` : `<img src="${m.url}" onclick="window.safeOpenExternal ? window.safeOpenExternal('${m.url}') : window.open('${m.url}','_blank','noopener,noreferrer')" style="cursor:zoom-in">`}
           <button class="media-del" onclick="window.removerMediaOS(${i})">✕</button>
         </div>`).join('');
   }
@@ -336,3 +937,50 @@ window.gerarPDFOS = async function() {
   doc.setTextColor(0, 212, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
   doc.text('J.A.R.V.I.S — LAUDO TÉCNICO', pw / 2, 18, { align: 'center' });
   doc.setFontSize(9); doc.setTextColor(200, 200, 200);
+  doc.text(J.tnome + ' · ' + new Date().toLocaleDateString('pt-BR'), pw / 2, 27, { align: 'center' });
+  y = 45;
+
+  doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  doc.text('DADOS DO VEÍCULO E CLIENTE', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 10;
+  
+  const v = J.veiculos.find(x => x.id === $v('osVeiculo'));
+  const c = J.clientes.find(x => x.id === $v('osCliente'));
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.text(`Cliente: ${c?.nome || $v('osCliente') || '-'}  |  WhatsApp: ${c?.wpp || $v('osCelular') || '-'}`, 15, y); y += 7;
+  doc.text(`Veículo: ${v?.modelo || $v('osVeiculo') || '-'}  |  Placa: ${v?.placa || $v('osPlaca') || '-'}  |  KM: ${$v('osKm') || '-'}`, 15, y); y += 12;
+  
+  doc.setFont('helvetica', 'bold'); doc.text('DEFEITO RECLAMADO / SERVIÇO', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 10;
+  doc.setFont('helvetica', 'normal');
+  const descText = $v('osDescricao') || $v('osRelato') || '-';
+  const descLines = doc.splitTextToSize(descText, pw - 30);
+  doc.text(descLines, 15, y); y += descLines.length * 6 + 10;
+  
+  const relRows = [];
+  document.querySelectorAll('#containerServicosOS > div').forEach(row => {
+    const desc = row.querySelector('.serv-desc')?.value || 'Serviço';
+    const val = row.querySelector('.serv-valor')?.value || 0;
+    if (desc || val > 0) relRows.push([desc, '1 (Srv)', 'R$ ' + parseFloat(val).toFixed(2), 'R$ ' + parseFloat(val).toFixed(2)]);
+  });
+  
+  document.querySelectorAll('#containerPecasOS > div').forEach(row => {
+    const sel = row.querySelector('.peca-sel'); const opt = sel?.options[sel?.selectedIndex];
+    const qtd = row.querySelector('.peca-qtd')?.value || 0;
+    const val = row.querySelector('.peca-venda')?.value || 0;
+    relRows.push([opt?.dataset.desc || opt?.text || '-', qtd, 'R$ ' + parseFloat(val).toFixed(2), 'R$ ' + (parseFloat(qtd) * parseFloat(val)).toFixed(2)]);
+  });
+  
+  if (relRows.length) {
+    doc.setFont('helvetica', 'bold'); doc.text('ORÇAMENTO DETALHADO', 15, y); doc.line(15, y + 2, pw - 15, y + 2); y += 8;
+    doc.autoTable({ startY: y, head: [['Descrição', 'Qtd', 'Valor Unit.', 'Subtotal']], body: relRows, theme: 'grid', headStyles: { fillColor: [6, 10, 20], textColor: [0, 212, 255] }, margin: { left: 15, right: 15 } });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+  
+  doc.setFillColor(230, 250, 230); doc.rect(pw - 80, y, 65, 16, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0, 100, 0);
+  doc.text('TOTAL: R$ ' + $v('osTotalHidden'), pw - 15, y + 10, { align: 'right' });
+  
+  doc.save(`Laudo_${v?.placa || $v('osPlaca') || 'OS'}_${new Date().getTime()}.pdf`);
+  window.toast('✓ PDF GERADO');
+};
+
+/* Powered by thIAguinho Soluções Digitais */

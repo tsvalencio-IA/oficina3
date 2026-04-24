@@ -260,7 +260,47 @@ window.gerarPDFOS = async function() {
       y += 8;
     }
 
-    // ─── QR CODE (link para portal do cliente) ───────────────
+  // ─── FOTOS DA O.S. (via osMediaArray) ───────────────────
+  const mediaArr = JSON.parse(document.getElementById('osMediaArray')?.value || '[]');
+  if (mediaArr.length > 0) {
+    // Verifica se cabe na página, senão adiciona nova
+    if (y > ph - 80) { doc.addPage(); y = 15; }
+
+    _sectionHeader(doc, 'EVIDÊNCIAS FOTOGRÁFICAS', ml, y, pw, bR, bG, bB);
+    y += 8;
+
+    const maxFotos = 6; // máx 2 por linha, 3 linhas
+    const fotosParaExibir = mediaArr.filter(m => m.type !== 'video' && !m.url?.endsWith('.mp4')).slice(0, maxFotos);
+    const imgW = (pw - 28 - 8) / 2; // 2 colunas
+    const imgH = imgW * 0.65;
+
+    for (let i = 0; i < fotosParaExibir.length; i++) {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const fx = ml + col * (imgW + 8);
+      const fy = y + row * (imgH + 6);
+
+      // Verifica paginação
+      if (fy + imgH > ph - 20) { doc.addPage(); y = 15 - row * (imgH + 6); }
+
+      try {
+        const imgData = await _loadImage(fotosParaExibir[i].url);
+        doc.addImage(imgData, 'JPEG', fx, fy, imgW, imgH);
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.2);
+        doc.rect(fx, fy, imgW, imgH, 'S');
+      } catch (e) {
+        // Foto falhou: placeholder
+        doc.setFillColor(240, 240, 240);
+        doc.rect(fx, fy, imgW, imgH, 'F');
+        doc.setFontSize(7); doc.setTextColor(180, 180, 180);
+        doc.text('Foto indisponível', fx + imgW/2, fy + imgH/2, { align: 'center' });
+      }
+    }
+    y += Math.ceil(fotosParaExibir.length / 2) * (imgH + 6) + 8;
+  }
+
+  // ─── QR CODE (link para portal do cliente) ───────────────
     const portalUrl = `${window.location.origin}/cliente.html?id=${osId || 'demo'}`;
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(portalUrl)}`;
 

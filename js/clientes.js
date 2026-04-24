@@ -6,53 +6,6 @@
 
 'use strict';
 
-async function _softDelete(collection, id, entidadeLabel) {
-  await J.db.collection(collection).doc(id).update({
-    deletedAt: new Date().toISOString(),
-    deletedBy: J.nome || 'sistema',
-    deletedByRole: J.role || 'desconhecido'
-  });
-  audit('SOFT_DELETE', `Removeu ${entidadeLabel} ${id}`);
-}
-
-function _ensureCrudDelegates() {
-  if (window.__crudDelegatesBound) return;
-  window.__crudDelegatesBound = true;
-  const bind = (tableId, handler) => {
-    const el = document.getElementById(tableId);
-    if (!el) return;
-    el.addEventListener('click', (ev) => {
-      const btn = ev.target.closest('button[data-act]');
-      if (!btn) return;
-      handler(btn.dataset.act, btn.dataset.id || '');
-    });
-  };
-  bind('tbClientes', (act, id) => {
-    if (act === 'edit') return prepCliente('edit', id), openModal('modalCliente');
-    if (act === 'wpp') return _wppCliente(id);
-    if (act === 'del') return deletarCliente(id);
-  });
-  bind('tbVeiculos', (act, id) => {
-    if (act === 'edit') return prepVeiculo('edit', id), openModal('modalVeiculo');
-    if (act === 'del') return deletarVeiculo(id);
-  });
-  bind('tbEstoque', (act, id) => {
-    if (act === 'edit') return prepPeca('edit', id), openModal('modalPeca');
-    if (act === 'del') return deletarPeca(id);
-  });
-  bind('tbFornec', (act, id) => {
-    if (act === 'wpp') return abrirWpp(id, '');
-    if (act === 'edit') return prepFornec('edit', id), openModal('modalFornec');
-    if (act === 'del') return deletarFornec(id);
-  });
-  bind('tbEquipe', (act, id) => {
-    if (act === 'edit') return prepFunc('edit', id), openModal('modalFunc');
-    if (act === 'del') return deletarFunc(id);
-  });
-}
-
-document.addEventListener('DOMContentLoaded', _ensureCrudDelegates);
-
 // ============================================================
 // CLIENTES
 // ============================================================
@@ -70,9 +23,9 @@ window.renderClientes = function() {
       <td><span class="badge badge-brand">${nVeics}</span></td>
       <td style="font-family:var(--ff-mono);font-size:0.78rem;color:var(--success)">${moeda(totalOS)}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${c.id}" style="margin-right:4px">✏</button>
-        ${c.wpp ? `<button class="btn btn-success btn-sm" data-act="wpp" data-id="${c.id}" style="margin-right:4px" title="WhatsApp">💬</button>` : ''}
-        <button class="btn btn-danger btn-sm" data-act="del" data-id="${c.id}">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="prepCliente('edit','${c.id}');openModal('modalCliente')" style="margin-right:4px">✏</button>
+        ${c.wpp ? `<button class="btn btn-success btn-sm" onclick="_wppCliente('${c.id}')" style="margin-right:4px" title="WhatsApp">💬</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deletarCliente('${c.id}')">🗑</button>
       </td>
     </tr>`;
   }).join('') || tableEmpty(5, '👥', 'Nenhum cliente cadastrado'));
@@ -129,8 +82,9 @@ window.salvarCliente = async function() {
 window.deletarCliente = async function(id) {
   const ok = await confirmar('Deletar este cliente? Esta ação não pode ser desfeita.', 'Atenção');
   if (!ok) return;
-  await _softDelete('clientes', id, 'cliente');
+  await J.db.collection('clientes').doc(id).delete();
   toastOk('Cliente removido');
+  audit('CLIENTES', `Deletou cliente ${id}`);
 };
 
 window._wppCliente = function(cid) {
@@ -155,8 +109,8 @@ window.renderVeiculos = function() {
       <td>${c?.nome || '—'}</td>
       <td style="font-family:var(--ff-mono);font-size:0.78rem">${v.km ? Number(v.km).toLocaleString('pt-BR') + ' km' : '—'}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${v.id}" style="margin-right:4px">✏</button>
-        <button class="btn btn-danger btn-sm" data-act="del" data-id="${v.id}">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="prepVeiculo('edit','${v.id}');openModal('modalVeiculo')" style="margin-right:4px">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="deletarVeiculo('${v.id}')">🗑</button>
       </td>
     </tr>`;
   }).join('') || tableEmpty(6, '🚗', 'Nenhum veículo cadastrado'));
@@ -211,7 +165,7 @@ window.salvarVeiculo = async function() {
 window.deletarVeiculo = async function(id) {
   const ok = await confirmar('Deletar este veículo?');
   if (!ok) return;
-  await _softDelete('veiculos', id, 'veículo');
+  await J.db.collection('veiculos').doc(id).delete();
   toastOk('Veículo removido');
 };
 
@@ -239,8 +193,8 @@ window.renderEstoque = function() {
       <td style="font-family:var(--ff-mono);color:var(--text-muted)">${p.min || 0}</td>
       <td>${crit ? badgeStatus('Cancelado') : badgeStatus('Concluido')}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${p.id}" style="margin-right:4px">✏</button>
-        <button class="btn btn-danger btn-sm" data-act="del" data-id="${p.id}">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="prepPeca('edit','${p.id}');openModal('modalPeca')" style="margin-right:4px">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="deletarPeca('${p.id}')">🗑</button>
       </td>
     </tr>`;
   }).join('') || tableEmpty(9, '📦', 'Nenhum item no estoque'));
@@ -306,7 +260,7 @@ window.salvarPeca = async function() {
 window.deletarPeca = async function(id) {
   const ok = await confirmar('Deletar esta peça do estoque?');
   if (!ok) return;
-  await _softDelete('estoqueItems', id, 'peça');
+  await J.db.collection('estoqueItems').doc(id).delete();
   toastOk('Peça removida');
 };
 
@@ -320,9 +274,9 @@ window.renderFornecedores = function() {
       <td style="font-size:0.78rem;color:var(--text-secondary)">${f.segmento || '—'}</td>
       <td style="font-family:var(--ff-mono);font-size:0.78rem">${f.wpp || '—'}</td>
       <td style="white-space:nowrap">
-        ${f.wpp ? `<button class="btn btn-success btn-sm" data-act="wpp" data-id="${f.wpp}" style="margin-right:4px">💬</button>` : ''}
-        <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${f.id}" style="margin-right:4px">✏</button>
-        <button class="btn btn-danger btn-sm" data-act="del" data-id="${f.id}">🗑</button>
+        ${f.wpp ? `<button class="btn btn-success btn-sm" onclick="abrirWpp('${f.wpp}','')" style="margin-right:4px">💬</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="prepFornec('edit','${f.id}');openModal('modalFornec')" style="margin-right:4px">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="deletarFornec('${f.id}')">🗑</button>
       </td>
     </tr>
   `).join('') || tableEmpty(4, '🏭', 'Nenhum fornecedor cadastrado'));
@@ -362,7 +316,7 @@ window.salvarFornec = async function() {
 window.deletarFornec = async function(id) {
   const ok = await confirmar('Deletar este fornecedor?');
   if (!ok) return;
-  await _softDelete('fornecedores', id, 'fornecedor');
+  await J.db.collection('fornecedores').doc(id).delete();
   toastOk('Fornecedor removido');
 };
 
@@ -384,8 +338,8 @@ window.renderEquipe = function() {
         </span>
       </td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${f.id}" style="margin-right:4px">✏</button>
-        <button class="btn btn-danger btn-sm" data-act="del" data-id="${f.id}">🗑</button>
+        <button class="btn btn-ghost btn-sm" onclick="prepFunc('edit','${f.id}');openModal('modalFunc')" style="margin-right:4px">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="deletarFunc('${f.id}')">🗑</button>
       </td>
     </tr>
   `).join('') || tableEmpty(5, '👷', 'Nenhum colaborador cadastrado'));
@@ -436,6 +390,7 @@ window.salvarFunc = async function() {
 window.deletarFunc = async function(id) {
   const ok = await confirmar('Remover este colaborador? O acesso será revogado imediatamente.', 'Atenção');
   if (!ok) return;
-  await _softDelete('funcionarios', id, 'colaborador');
+  await J.db.collection('funcionarios').doc(id).delete();
   toastOk('Colaborador removido');
+  audit('EQUIPE', `Removeu colaborador ${id}`);
 };

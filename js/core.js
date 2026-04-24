@@ -158,7 +158,7 @@ function _escutarOS() {
 
 function _escutarClientes() {
   J.db.collection('clientes').where('tenantId', '==', J.tid).onSnapshot(snap => {
-    J.clientes = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.deletedAt);
+    J.clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.renderClientes && renderClientes();
     popularSelects();
   });
@@ -166,7 +166,7 @@ function _escutarClientes() {
 
 function _escutarVeiculos() {
   J.db.collection('veiculos').where('tenantId', '==', J.tid).onSnapshot(snap => {
-    J.veiculos = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => !v.deletedAt);
+    J.veiculos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.renderVeiculos && renderVeiculos();
     popularSelects();
   });
@@ -174,7 +174,7 @@ function _escutarVeiculos() {
 
 function _escutarEstoque() {
   J.db.collection('estoqueItems').where('tenantId', '==', J.tid).onSnapshot(snap => {
-    J.estoque = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deletedAt);
+    J.estoque = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.renderEstoque   && renderEstoque();
     window.renderDashboard && renderDashboard();
   });
@@ -190,7 +190,7 @@ function _escutarFinanceiro() {
 
 function _escutarEquipe() {
   J.db.collection('funcionarios').where('tenantId', '==', J.tid).onSnapshot(snap => {
-    J.equipe = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(f => !f.deletedAt);
+    J.equipe = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.renderEquipe  && renderEquipe();
     window.calcComissoes && calcComissoes();
     popularSelects();
@@ -199,7 +199,7 @@ function _escutarEquipe() {
 
 function _escutarFornecedores() {
   J.db.collection('fornecedores').where('tenantId', '==', J.tid).onSnapshot(snap => {
-    J.fornecedores = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(f => !f.deletedAt);
+    J.fornecedores = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     window.renderFornecedores && renderFornecedores();
     popularSelects();
   });
@@ -441,10 +441,7 @@ window.randId= (n=6) => Math.random().toString(36).slice(-n).toUpperCase();
 window.sair = function() { sessionStorage.clear(); window.location.href='index.html'; };
 window.abrirWpp = function(numero, msg) {
   const n = (numero||'').replace(/\D/g,'');
-  if (!n) return window.toastWarn && toastWarn('Número inválido para WhatsApp');
-  const url = `https://wa.me/55${n}?text=${encodeURIComponent(msg||'')}`;
-  if (window.safeOpenExternal) return window.safeOpenExternal(url);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  window.open(`https://wa.me/55${n}?text=${encodeURIComponent(msg||'')}`, '_blank');
 };
 
 window.setBadge = function(id, count) {
@@ -830,15 +827,12 @@ window._chatAtivoId = function() {
 // ═════════════════════════════════════════════════════════════
 window.renderChatLista = function() {
   const el = document.getElementById('chatLista'); if(!el) return;
-  const esc = window.escHtml || (x => String(x ?? ''));
   el.innerHTML = J.clientes.map(c=>{
     const msgs = J.mensagens.filter(m => m.clienteId === c.id);
     const ultima = msgs[msgs.length-1];
     const nLidas = msgs.filter(m => m.sender === 'cliente' && !m.lidaAdmin).length;
-    const nome = esc(c.nome);
-    const nomeArg = encodeURIComponent(c.nome || '');
-    return `<div class="chat-item ${J.chatAtivo === c.id ? 'active' : ''}" onclick="window.abrirChat('${c.id}', decodeURIComponent('${nomeArg}'))">
-      <div class="chat-item-name">${nome} ${nLidas > 0 ? `<span class="chat-unread">${nLidas}</span>` : ''}</div>
+    return `<div class="chat-item ${J.chatAtivo === c.id ? 'active' : ''}" onclick="window.abrirChat('${c.id}','${c.nome}')">
+      <div class="chat-item-name">${c.nome} ${nLidas > 0 ? `<span class="chat-unread">${nLidas}</span>` : ''}</div>
       <div class="chat-item-last">${ultima?.msg ? window.formatarMidiaChat(ultima.msg) : 'Sem mensagens'}</div>
     </div>`;
   }).join('');
@@ -880,15 +874,12 @@ document.getElementById('chatInput')?.addEventListener('keydown', e => {
 
 window.renderChatEquipeAdmin = window.renderChatListaEquipe = function() {
   const el = document.getElementById('chatListaEquipe'); if(!el) return;
-  const esc = window.escHtml || (x => String(x ?? ''));
   el.innerHTML = J.equipe.map(f=>{
     const msgs = J.chatEquipe.filter(m => (m.de === f.id || m.para === f.id));
     const ultima = msgs[msgs.length-1];
     const nLidas = msgs.filter(m => m.sender === 'equipe' && m.de === f.id && !m.lidaAdmin).length;
-    const nome = esc(f.nome);
-    const nomeArg = encodeURIComponent(f.nome || '');
-    return `<div class="chat-item ${J.chatEquipeAtivo === f.id ? 'active' : ''}" onclick="window.abrirChatEquipe('${f.id}', decodeURIComponent('${nomeArg}'))">
-      <div class="chat-item-name">${nome} ${nLidas > 0 ? `<span class="chat-unread">${nLidas}</span>` : ''}</div>
+    return `<div class="chat-item ${J.chatEquipeAtivo === f.id ? 'active' : ''}" onclick="window.abrirChatEquipe('${f.id}','${f.nome}')">
+      <div class="chat-item-name">${f.nome} ${nLidas > 0 ? `<span class="chat-unread">${nLidas}</span>` : ''}</div>
       <div class="chat-item-last">${ultima?.msg ? window.formatarMidiaChat(ultima.msg) : 'Sem mensagens'}</div>
     </div>`;
   }).join('');
@@ -908,9 +899,8 @@ window.abrirChatEquipe = function(fid, nome) {
 window.renderChatMsgsEquipeAdmin = function(fid) {
   const msgs = J.chatEquipe.filter(m => (m.de === fid || m.para === fid));
   const el = document.getElementById('chatMsgsEquipe'); if(!el) return;
-  const esc = window.escHtml || (x => String(x ?? ''));
   el.innerHTML = msgs.map(m => `<div class="chat-msg ${m.sender === 'admin' ? 'admin' : 'cliente'}">
-    <small style="display:block;opacity:0.6;margin-bottom:2px">${m.sender === 'admin' ? 'Você' : esc(J.equipe.find(f => f.id === m.de)?.nome || 'Equipe')}</small>
+    <small style="display:block;opacity:0.6;margin-bottom:2px">${m.sender === 'admin' ? 'Você' : (J.equipe.find(f => f.id === m.de)?.nome || 'Equipe')}</small>
     ${window.formatarMidiaChat ? window.formatarMidiaChat(m.msg) : m.msg}
     <div class="ts">${m.ts ? new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}</div>
   </div>`).join('');

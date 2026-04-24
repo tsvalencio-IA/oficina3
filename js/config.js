@@ -130,19 +130,8 @@ window.aplicarBrand = function(brand) {
 // FIREBASE INIT
 // ============================================================
 window.initFirebase = function() {
-  if (typeof firebase === 'undefined') {
-    throw new Error('Firebase SDK não carregado na página.');
-  }
   if (!firebase.apps.length) firebase.initializeApp(window.JARVIS_FB_CONFIG);
   return firebase.firestore();
-};
-
-window.getDB = function() {
-  if (window.J?.db) return window.J.db;
-  if (typeof window.db !== 'undefined' && window.db) return window.db;
-  if (window.__jarvisDB) return window.__jarvisDB;
-  window.__jarvisDB = window.initFirebase();
-  return window.__jarvisDB;
 };
 
 // Helper de Cores
