@@ -20,8 +20,8 @@ const config = {
   webDir: 'www',
   bundledWebRuntime: false,
   server: {
-    // Aponta para o index.html (com seletor de perfil: cliente, mecânico, gestor, superadmin)
-    url: 'https://tsvalencio-ia.github.io/oficinaClaude/index.html',
+    // Aponta para o seletor de perfil (tela com 4 botões: Cliente / Mecânico / Gestor / Admin)
+    url: 'https://tsvalencio-ia.github.io/oficinaClaude/selecionar-perfil.html',
     androidScheme: 'https',
     cleartext: false,
     allowNavigation: [
