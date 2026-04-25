@@ -922,4 +922,103 @@ document.getElementById('chatInputEquipeAdmin')?.addEventListener('keydown', e =
   if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.enviarMsgEquipeAdmin(); }
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// VALIDADORES FISCAIS OFICIAIS (CPF / CNPJ / PLACA / CEP)
+// Algoritmos conforme Receita Federal do Brasil — módulo 11.
+// Bloqueia cadastros duplicados e com dígito verificador inválido.
+// Powered by thIAguinho Soluções Digitais
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Valida CPF pelo algoritmo oficial da Receita Federal (módulo 11).
+ * Retorna true apenas se os 11 dígitos + DV estiverem corretos.
+ * Rejeita sequências repetidas (111.111.111-11, 000.000.000-00, etc.).
+ */
+window.validarCPF = function(cpf) {
+  if (!cpf) return false;
+  const c = String(cpf).replace(/[^\d]/g, '');
+  if (c.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(c)) return false; // todos os dígitos iguais
+  let s, r, i;
+  // 1º dígito verificador
+  s = 0;
+  for (i = 0; i < 9; i++) s += parseInt(c[i]) * (10 - i);
+  r = 11 - (s % 11);
+  if (r >= 10) r = 0;
+  if (r !== parseInt(c[9])) return false;
+  // 2º dígito verificador
+  s = 0;
+  for (i = 0; i < 10; i++) s += parseInt(c[i]) * (11 - i);
+  r = 11 - (s % 11);
+  if (r >= 10) r = 0;
+  if (r !== parseInt(c[10])) return false;
+  return true;
+};
+
+/**
+ * Valida CNPJ pelo algoritmo oficial (módulo 11 com pesos 5,4,3,2,9,8,7,6,5,4,3,2).
+ */
+window.validarCNPJ = function(cnpj) {
+  if (!cnpj) return false;
+  const c = String(cnpj).replace(/[^\d]/g, '');
+  if (c.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(c)) return false;
+  const calc = (len) => {
+    let s = 0, pos = len - 7;
+    for (let i = len; i >= 1; i--) {
+      s += parseInt(c[len - i]) * pos--;
+      if (pos < 2) pos = 9;
+    }
+    const r = s % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  if (calc(12) !== parseInt(c[12])) return false;
+  if (calc(13) !== parseInt(c[13])) return false;
+  return true;
+};
+
+/**
+ * Formata CPF (###.###.###-##) ou retorna o valor original se inválido.
+ */
+window.formatarCPF = function(cpf) {
+  const c = String(cpf || '').replace(/[^\d]/g, '');
+  if (c.length !== 11) return cpf || '';
+  return c.substring(0,3) + '.' + c.substring(3,6) + '.' + c.substring(6,9) + '-' + c.substring(9,11);
+};
+
+/**
+ * Formata CNPJ (##.###.###/####-##)
+ */
+window.formatarCNPJ = function(cnpj) {
+  const c = String(cnpj || '').replace(/[^\d]/g, '');
+  if (c.length !== 14) return cnpj || '';
+  return c.substring(0,2)+'.'+c.substring(2,5)+'.'+c.substring(5,8)+'/'+c.substring(8,12)+'-'+c.substring(12,14);
+};
+
+/**
+ * Validação da placa (Mercosul AAA1A23 OU antiga AAA1234).
+ */
+window.validarPlaca = function(placa) {
+  if (!placa) return false;
+  const p = String(placa).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (p.length !== 7) return false;
+  // Mercosul: 3 letras + 1 número + 1 letra + 2 números
+  // Antiga:   3 letras + 4 números
+  return /^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(p);
+};
+
+/**
+ * Checa se já existe OUTRO registro no tenant com o mesmo CPF/CNPJ.
+ * Passe o array (J.clientes) + documento normalizado + id atual (opcional).
+ */
+window.cpfDuplicado = function(cpf, lista, idAtual) {
+  const c = String(cpf || '').replace(/[^\d]/g, '');
+  if (!c) return false;
+  return (lista || []).some(x => {
+    if (idAtual && x.id === idAtual) return false;
+    const cpfX = String(x.cpf || x.cnpj || '').replace(/[^\d]/g, '');
+    return cpfX && cpfX === c;
+  });
+};
+
 /* Powered by thIAguinho Soluções Digitais */

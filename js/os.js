@@ -73,22 +73,24 @@ window.renderKanban = function() {
       const btnPrev = sPrev ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sPrev}')" title="Mover para ${sPrev}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15 18l-6-6 6-6"/></svg></button>` : '<div></div>';
       const btnNext = sNext ? `<button onclick="event.stopPropagation(); window.moverStatusOS('${os.id}', '${sNext}')" title="Mover para ${sNext}" style="background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:4px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18l6-6-6-6"/></svg></button>` : '<div></div>';
 
-      const placaReal  = v?.placa  || os.placa  || 'S/PLACA';
-      const clienteReal = c?.nome  || os.cliente || '—';
-      const modeloReal  = v?.modelo || os.veiculo || '';
-      const boxInfo = os.boxNumero ? `<div style="font-family:var(--fm);font-size:0.62rem;color:#FF8C00;margin-top:2px;">📍 Box ${os.boxNumero}${os.mecNome ? ' — '+os.mecNome : ''}</div>` : '';
+      // Sanitização defensiva contra HTML/script em campos de texto livres
+      const esc = s => String(s == null ? '' : s).replace(/[<>&"']/g, ch => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[ch]));
+      const nomeCli = esc(c?.nome || os.cliente || 'Cliente Avulso').trim() || 'Cliente Avulso';
+      const placaRaw = (os.placa || v?.placa || 'S/PLACA').toString().trim().toUpperCase();
+      const placaFmt = placaRaw === 'S/PLACA' ? 'S/PLACA' : esc(placaRaw);
+      const descFmt = esc(os.desc || os.relato || 'Sem descrição inicial...').substring(0, 120);
 
       return `<div class="k-card" style="border-left-color:${cor}" onclick="window.prepOS('edit','${os.id}');abrirModal('modalOS')">
-        <div class="k-placa" style="color:${cor}">${placaReal}</div>
-        <div class="k-cliente" style="font-weight:700;color:var(--text);">${clienteReal}</div>
-        ${modeloReal ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:-2px;">${modeloReal}</div>` : ''}
-        ${boxInfo}
-        <div class="k-desc">${os.desc || os.relato || 'Sem descrição'}</div>
-        <div class="k-footer">
-          <span class="k-tipo ${tipoCls}">${tipoLabel}</span>
-          <span style="font-family:var(--fm);font-size:0.75rem;color:var(--success);font-weight:700;">${moeda(os.total)}</span>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+            <div class="k-placa" style="color:${cor};margin:0;font-size:1rem;">${placaFmt}</div>
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;border-top:1px solid rgba(255,255,255,0.05);padding-top:4px;">
+        <div class="k-cliente" style="font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:2px;">${nomeCli}</div>
+        <div class="k-desc" style="margin-bottom:8px;">${descFmt}</div>
+        <div class="k-footer" style="margin-bottom:8px;">
+          <span class="k-tipo ${tipoCls}">${tipoLabel}</span>
+          <span style="font-family:var(--fm);font-size:0.85rem;color:var(--success);font-weight:700;">${moeda(os.total)}</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.05);padding-top:6px;">
           ${btnPrev}
           <span class="k-date">${dtBr(os.createdAt || os.data)}</span>
           ${btnNext}
@@ -99,20 +101,60 @@ window.renderKanban = function() {
 };
 
 window.moverStatusOS = async function(id, novoStatus) {
-    // Intercepta: Aprovado → Andamento exige vinculação de Box
-    if (novoStatus === 'Andamento') {
-        const os = J.os.find(x => x.id === id);
-        if (os && os.status !== 'Andamento') {
-            window._osParaBox = id;
-            window.abrirModalBox(id);
-            return;
-        }
-    }
+    // Captura status antigo ANTES de atualizar (para comparar)
+    const osAntes = J.os.find(x => x.id === id);
+    const statusAntes = osAntes?.status || '';
+
     await db.collection('ordens_servico').doc(id).update({ status: novoStatus, updatedAt: new Date().toISOString() });
     window.toast(`✓ Movido para ${novoStatus.replace('_', ' ')}`);
-    audit('KANBAN', `Moveu OS ${id.slice(-6)} para ${novoStatus}`);
-    if (novoStatus === 'Orcamento_Enviado') window.enviarWppB2C(id);
-    if (novoStatus === 'Pronto') window.notificarClientePronto(id);
+    audit('KANBAN', `Moveu OS ${id.slice(-6)} de "${statusAntes}" para "${novoStatus}"`);
+
+    if (novoStatus === 'Orcamento_Enviado') {
+        window.enviarWppB2C(id);
+    }
+
+    // ═══ WhatsApp automático: Pronto para retirada / Entregue ═══
+    if ((novoStatus === 'Pronto' || novoStatus === 'Entregue') &&
+        statusAntes !== 'Pronto' && statusAntes !== 'Entregue') {
+        setTimeout(() => {
+            if (typeof window.dispararAvisoEntregaAutomatico === 'function') {
+                window.dispararAvisoEntregaAutomatico(id, novoStatus);
+            }
+        }, 300);
+    }
+};
+
+/**
+ * Dispara aviso via WhatsApp quando a O.S. fica Pronta ou Entregue.
+ * Abre o WhatsApp Web/App com mensagem pré-preenchida. Cliente confirma envio.
+ */
+window.dispararAvisoEntregaAutomatico = function(id, novoStatus) {
+    const os = J.os.find(x => x.id === id);
+    if (!os) return;
+    const c = J.clientes.find(x => x.id === os.clienteId);
+    if (!c?.wpp) {
+        window.toast('Cliente sem WhatsApp cadastrado — aviso automático não enviado.', 'warn');
+        return;
+    }
+    const v = J.veiculos.find(x => x.id === os.veiculoId);
+    const placaFmt = os.placa || v?.placa || 'seu veículo';
+    const modelo = v?.modelo ? ` ${v.modelo}` : '';
+    const fone = String(c.wpp).replace(/\D/g, '');
+
+    let msg = '';
+    if (novoStatus === 'Pronto') {
+        msg = `Olá ${c.nome}! 👋\n\nAqui é da ${J.tnome}.\n\n✅ Seu veículo ${placaFmt}${modelo} está *PRONTO PARA RETIRADA*!\n\nPassamos a O.S. #${id.slice(-6).toUpperCase()} para conferência do caixa. Pode vir buscar quando for melhor pra você.\n\nAguardamos!`;
+    } else if (novoStatus === 'Entregue') {
+        msg = `Olá ${c.nome}! 👋\n\nAqui é da ${J.tnome}.\n\n🚘 Confirmamos a *ENTREGA* do seu veículo ${placaFmt}${modelo} referente à O.S. #${id.slice(-6).toUpperCase()}.\n\nMuito obrigado pela confiança! Qualquer dúvida pós-serviço, é só chamar por aqui.\n\nBoa estrada! 🛣️`;
+    }
+    if (!msg) return;
+
+    // Confirma com o usuário antes de abrir o WhatsApp (evita spam involuntário)
+    if (confirm(`Enviar aviso automático para ${c.nome} via WhatsApp?\n\n"${msg.substring(0, 200)}..."`)) {
+        const url = `https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+        audit('WHATSAPP', `Aviso ${novoStatus === 'Pronto' ? 'PRONTO P/ RETIRADA' : 'ENTREGA CONFIRMADA'} enviado para ${c.nome} (OS ${id.slice(-6).toUpperCase()})`);
+    }
 };
 
 window.enviarWppB2C = function(id) {
@@ -158,238 +200,13 @@ window.enviarWppB2C = function(id) {
 let mediaOSAtual = []; 
 let timelineOSAtual = [];
 
-// ═══════════════════════════════════════════════════════════════
-// NOTIFICAÇÃO WHATSAPP — VEÍCULO PRONTO
-// ═══════════════════════════════════════════════════════════════
-window.notificarClientePronto = function(id) {
-    const os = J.os.find(x => x.id === id); if (!os) return;
-    const cli = J.clientes.find(x => x.id === os.clienteId);
-    const fone = (cli?.wpp || os.celular || '').replace(/\D/g, '');
-    if (!fone) return;
-    const nome = (cli?.nome || os.cliente || 'Cliente').split(' ')[0];
-    const placa = (os.placa || '').toUpperCase();
-    const msg = `Olá ${nome}! 🎉\n\nSeu veículo *${placa}* está *PRONTO* para retirada na *${J.tnome}*!\n\nPode vir buscar quando quiser. Aguardamos você! 🚘`;
-    if (confirm(`Deseja notificar o cliente sobre o veículo pronto?\n\n${msg.substring(0,120)}...`)) {
-        window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
-        audit('WHATSAPP', `Notificou cliente que ${placa} está pronto`);
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════
-// VINCULAÇÃO DE BOX E MECÂNICO (MODAL)
-// ═══════════════════════════════════════════════════════════════
-window.abrirModalBox = function(osId) {
-    window._osParaBox = osId;
-    const os = J.os.find(x => x.id === osId); if (!os) return;
-    const el = $('modalBox'); if (!el) return;
-
-    // Popula select de mecânicos
-    const selMec = $('boxMecanico');
-    if (selMec) {
-        selMec.innerHTML = '<option value="">Não atribuído</option>' +
-            J.equipe.map(f => `<option value="${f.id}" ${f.id === os.mecId ? 'selected' : ''}>${f.nome} (${f.cargo})</option>`).join('');
-    }
-    // Restaura box anterior se existir
-    if ($('boxNumero')) $('boxNumero').value = os.boxNumero || '';
-
-    abrirModal('modalBox');
-};
-
-window.confirmarBox = async function() {
-    const osId = window._osParaBox; if (!osId) return;
-    const boxNum = $v('boxNumero');
-    const mecId  = $v('boxMecanico');
-    if (!boxNum) { window.toast('⚠ Informe o número do Box', 'warn'); return; }
-
-    const os = J.os.find(x => x.id === osId);
-    const mec = J.equipe.find(f => f.id === mecId);
-    const mecNome = mec?.nome || 'Não atribuído';
-
-    const tl = [...(os?.timeline || [])];
-    tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `Vinculou ao Box ${boxNum} — Mecânico: ${mecNome}. Status: Em Serviço` });
-
-    await db.collection('ordens_servico').doc(osId).update({
-        status: 'Andamento',
-        boxNumero: boxNum,
-        mecId: mecId || os?.mecId || '',
-        mecNome: mecNome,
-        timeline: tl,
-        updatedAt: new Date().toISOString()
-    });
-
-    // WhatsApp ao cliente
-    const cli = J.clientes.find(x => x.id === os?.clienteId);
-    const fone = (cli?.wpp || os?.celular || '').replace(/\D/g, '');
-    if (fone) {
-        const nome = (cli?.nome || os?.cliente || 'Cliente').split(' ')[0];
-        const msg = `Olá ${nome}! 🔧\n\nSeu veículo *${os?.placa?.toUpperCase() || ''}* acabou de entrar para serviço na *${J.tnome}*.\n\n📍 Box: *${boxNum}*\n👨‍🔧 Mecânico: *${mecNome}*\n\nAcompanhe o andamento pelo portal!`;
-        if (confirm('Notificar cliente que o serviço iniciou?')) {
-            window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
-        }
-    }
-
-    fecharModal('modalBox');
-    window.toast(`✓ Box ${boxNum} vinculado — ${mecNome}`);
-    audit('KANBAN', `Vinculou OS ${osId.slice(-6)} ao Box ${boxNum} c/ ${mecNome}`);
-};
-
-// ═══════════════════════════════════════════════════════════════
-// CHECKOUT + FATURAMENTO COMPLETO (MODAL)
-// ═══════════════════════════════════════════════════════════════
-window.abrirFaturamento = function() {
-    const osId = $v('osId'); if (!osId) return;
-    const os = J.os.find(x => x.id === osId); if (!os) return;
-    const total = parseFloat($('osTotalHidden')?.value || os.total || 0);
-
-    if ($('fatValorTotal')) $('fatValorTotal').innerText = moeda(total);
-    if ($('fatOsId')) $('fatOsId').value = osId;
-    if ($('fatForma')) $('fatForma').value = 'PIX';
-    if ($('fatParcelas')) $('fatParcelas').value = '1';
-
-    abrirModal('modalFaturamento');
-};
-
-window.processarFaturamento = async function() {
-    const osId = $v('fatOsId'); if (!osId) return;
-    const os = J.os.find(x => x.id === osId); if (!os) return;
-
-    const forma = $v('fatForma');
-    const nParcelas = parseInt($v('fatParcelas') || 1);
-    const total = os.total || 0;
-    const valorParc = total / nParcelas;
-    const hoje = new Date().toISOString().split('T')[0];
-
-    const formasPagas = ['Dinheiro', 'PIX', 'Débito', 'Crédito à Vista'];
-    const statusPgto = formasPagas.includes(forma) ? 'Pago' : 'Pendente';
-
-    try {
-        const batch = db.batch();
-
-        // 1. Gera títulos financeiros parcelados
-        for (let i = 0; i < nParcelas; i++) {
-            const dv = new Date(hoje);
-            dv.setMonth(dv.getMonth() + i);
-            const c = J.clientes.find(x => x.id === os.clienteId);
-            const v = J.veiculos.find(x => x.id === os.veiculoId);
-            const descFin = nParcelas > 1
-                ? `O.S. ${v?.placa || os.placa || ''} — ${c?.nome || os.cliente || ''} (${i+1}/${nParcelas})`
-                : `O.S. ${v?.placa || os.placa || ''} — ${c?.nome || os.cliente || ''}`;
-            batch.set(db.collection('financeiro').doc(), {
-                tenantId: J.tid, tipo: 'Entrada', status: statusPgto,
-                desc: descFin, valor: valorParc, pgto: forma,
-                venc: dv.toISOString().split('T')[0],
-                createdAt: new Date().toISOString()
-            });
-        }
-
-        // 2. Baixa de estoque das peças
-        const pecas = os.pecas || [];
-        for (const p of pecas) {
-            if (p.estoqueId && !os.baixaEstoqueFeita) {
-                const item = J.estoque.find(x => x.id === p.estoqueId);
-                if (item) {
-                    batch.update(db.collection('estoqueItems').doc(p.estoqueId), {
-                        qtd: Math.max(0, (item.qtd || 0) - (p.qtd || 1))
-                    });
-                }
-            }
-        }
-
-        // 3. Comissão do mecânico
-        const mec = J.equipe.find(f => f.id === os.mecId);
-        if (mec) {
-            const percMO = parseFloat(mec.comissaoServico || mec.comissao || 0);
-            const percPc = parseFloat(mec.comissaoPeca || 0);
-            const totalMO = (os.servicos || []).reduce((a, s) => a + (s.valor || 0), 0) + (os.maoObra || 0);
-            const totalPc = (os.pecas || []).reduce((a, p) => a + ((p.qtd || 1) * (p.venda || 0)), 0);
-            const valCom = (totalMO * percMO / 100) + (totalPc * percPc / 100);
-            if (valCom > 0) {
-                batch.set(db.collection('financeiro').doc(), {
-                    tenantId: J.tid, tipo: 'Saída', status: 'Pendente',
-                    desc: `Comissão ${mec.nome} — O.S. ${os.placa || ''}`,
-                    valor: valCom, pgto: 'A Combinar',
-                    venc: hoje, createdAt: new Date().toISOString(),
-                    isComissao: true, mecId: os.mecId, vinculo: `E_${os.mecId}`
-                });
-            }
-        }
-
-        // 4. Atualiza OS para Entregue
-        const tl = [...(os.timeline || [])];
-        tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `CHECKOUT REALIZADO — ${nParcelas}x ${forma} — R$ ${total.toFixed(2)}. Estoque baixado.` });
-        batch.update(db.collection('ordens_servico').doc(osId), {
-            status: 'Entregue', baixaEstoqueFeita: true,
-            pgtoForma: forma, pgtoData: hoje,
-            timeline: tl, updatedAt: new Date().toISOString()
-        });
-
-        await batch.commit();
-
-        audit('FATURAMENTO', `Checkout OS ${os.placa || osId.slice(-6)} — ${nParcelas}x ${forma} — ${moeda(total)}`);
-        window.toast(`✓ CHECKOUT CONCLUÍDO — ${moeda(total)}`, 'ok');
-        fecharModal('modalFaturamento');
-        fecharModal('modalOS');
-
-        // WhatsApp de confirmação
-        const cli = J.clientes.find(x => x.id === os.clienteId);
-        const fone = (cli?.wpp || os.celular || '').replace(/\D/g, '');
-        if (fone) {
-            const nome = (cli?.nome || os.cliente || 'Cliente').split(' ')[0];
-            const msg = `Olá ${nome}! ✅\n\nPassagem pela *${J.tnome}* concluída com sucesso!\n\n🚘 Veículo: *${os.placa?.toUpperCase() || ''}*\n💰 Total: *${moeda(total)}*\n💳 Pagamento: ${forma}${nParcelas > 1 ? ` (${nParcelas}x)` : ''}\n\nObrigado pela confiança! 🙏`;
-            if (confirm('Enviar comprovante para o cliente via WhatsApp?')) {
-                window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
-            }
-        }
-
-    } catch (e) {
-        window.toast('✕ Erro no checkout: ' + e.message, 'err');
-    }
-};
-
-// ═══════════════════════════════════════════════════════════════
-// EXCLUIR O.S. COM LIXEIRA ANTIFRAUDE (JUSTIFICATIVA OBRIGATÓRIA)
-// ═══════════════════════════════════════════════════════════════
-window.deletarOS = async function() {
-    const osId = $v('osId'); if (!osId) return;
-
-    // Somente admin/gestor
-    if (J.role !== 'admin' && J.role !== 'gestor' && J.role !== 'gerente') {
-        window.toast('⛔ Apenas gestores podem excluir O.S.', 'err'); return;
-    }
-
-    const os = J.os.find(x => x.id === osId);
-    const placa = os?.placa || osId.slice(-6).toUpperCase();
-
-    const motivo = prompt(
-        `⚠ ATENÇÃO — EXCLUSÃO PERMANENTE\n\nO.S. da placa: ${placa}\n\nDigite a JUSTIFICATIVA OBRIGATÓRIA (ficará gravada na trilha de auditoria antifraude):`
-    );
-    if (!motivo || motivo.trim() === '') {
-        window.toast('⛔ Operação cancelada. A justificativa é obrigatória.', 'err'); return;
-    }
-
-    try {
-        // 1. Grava na lixeira de auditoria ANTES de deletar
-        await db.collection('lixeira_auditoria').add({
-            tenantId: J.tid,
-            modulo: 'OS — EXCLUSÃO',
-            acao: `O.S. da placa ${placa} excluída. Justificativa: ${motivo}`,
-            usuario: J.nome,
-            placaOriginal: placa,
-            osSnapshot: os || {},
-            ts: new Date().toISOString()
-        });
-        // 2. Deleta a OS
-        await db.collection('ordens_servico').doc(osId).delete();
-        window.toast(`✓ O.S. ${placa} excluída. Auditoria registrada.`);
-        fecharModal('modalOS');
-    } catch (e) {
-        window.toast('✕ Erro ao excluir: ' + e.message, 'err');
-    }
-};
-
 window.prepOS = function(mode, id = null) {
   ['osId', 'osPlaca', 'osVeiculo', 'osCliente', 'osCelular', 'osCpf', 'osDiagnostico', 'osRelato', 'osDescricao', 'chkObs', 'osKm', 'osData'].forEach(f => { if ($(f)) $(f).value = ''; });
-  ['chkPainel', 'chkPressao', 'chkCarroceria', 'chkDocumentos'].forEach(f => { if ($(f)) $(f).checked = false; });
+  // Checklist tri-state: limpa valor hidden + botões ativos
+  ['chkPainel', 'chkPressao', 'chkCarroceria', 'chkDocumentos'].forEach(f => {
+    if ($(f)) $(f).value = '';
+    if (typeof window._chkTriApply === 'function') window._chkTriApply(f, '');
+  });
   
   if ($('osStatus')) $('osStatus').value = 'Triagem';
   if ($('osTipoVeiculo')) $('osTipoVeiculo').value = 'carro';
@@ -444,6 +261,13 @@ window.prepOS = function(mode, id = null) {
     if ($('osDescricao')) $('osDescricao').value = o.desc || o.relato || '';
     if ($('osData')) $('osData').value = o.data || ''; 
     if ($('osKm')) $('osKm').value = o.km || '';
+    // LOTE C — Traz próxima revisão ao editar
+    if ($('osProxRev')) $('osProxRev').value = o.proxRev || '';
+    if ($('osProxKm'))  $('osProxKm').value  = o.proxKm  || '';
+    // LOTE B — Traz forma de pagamento e parcelas
+    if ($('osPgtoForma')) $('osPgtoForma').value = o.pgtoForma || '';
+    if ($('osPgtoData'))  $('osPgtoData').value  = o.pgtoData  || '';
+    if ($('osPgtoParcelas')) $('osPgtoParcelas').value = o.pgtoParcelas || 1;
     
     window.osPecas = o.pecas || [];
     window.osFotos = o.media || o.fotos || [];
@@ -465,10 +289,20 @@ window.prepOS = function(mode, id = null) {
     if ($('chkPneuTra')) $('chkPneuTra').value = o.chkPneuTra || ''; 
     if ($('chkObs')) $('chkObs').value = o.chkObs || '';
     
-    if (o.chkPainel && $('chkPainel')) $('chkPainel').checked = true; 
-    if (o.chkPressao && $('chkPressao')) $('chkPressao').checked = true;
-    if (o.chkCarroceria && $('chkCarroceria')) $('chkCarroceria').checked = true;
-    if (o.chkDocumentos && $('chkDocumentos')) $('chkDocumentos').checked = true;
+    // LOTE 1.5 — Checklist tri-state: aceita formato antigo (boolean) e novo (string 'ok'/'atencao'/'critico')
+    const _toTri = v => (v === true || v === 'ok') ? 'ok' : (v === 'atencao' || v === 'critico') ? v : '';
+    if (typeof window._chkTriApply === 'function') {
+      window._chkTriApply('chkPainel',     _toTri(o.chkPainel));
+      window._chkTriApply('chkPressao',    _toTri(o.chkPressao));
+      window._chkTriApply('chkCarroceria', _toTri(o.chkCarroceria));
+      window._chkTriApply('chkDocumentos', _toTri(o.chkDocumentos));
+    } else {
+      // Fallback compatível com versão antiga
+      if (o.chkPainel && $('chkPainel')) $('chkPainel').value = _toTri(o.chkPainel);
+      if (o.chkPressao && $('chkPressao')) $('chkPressao').value = _toTri(o.chkPressao);
+      if (o.chkCarroceria && $('chkCarroceria')) $('chkCarroceria').value = _toTri(o.chkCarroceria);
+      if (o.chkDocumentos && $('chkDocumentos')) $('chkDocumentos').value = _toTri(o.chkDocumentos);
+    }
 
     if($('osTimelineData') && o.timeline) {
         $('osTimelineData').value = JSON.stringify(o.timeline);
@@ -483,19 +317,6 @@ window.prepOS = function(mode, id = null) {
     window.calcOSTotal();
     window.verificarStatusOS();
     
-    // Exibe info de Box se existir
-    if (o.boxNumero) {
-        const boxInfoEl = $('osBoxInfo');
-        if (boxInfoEl) {
-            const mecBox = J.equipe.find(f => f.id === o.mecId);
-            boxInfoEl.style.display = 'flex';
-            boxInfoEl.innerHTML = `<span style="font-family:var(--fm);font-size:0.7rem;color:#FF8C00;">📍 Box ${o.boxNumero}${mecBox ? ' — '+ mecBox.nome : (o.mecNome ? ' — '+o.mecNome : '')}</span>`;
-        }
-    } else {
-        const boxInfoEl = $('osBoxInfo');
-        if (boxInfoEl) boxInfoEl.style.display = 'none';
-    }
-
     if ($('btnGerarPDFOS')) $('btnGerarPDFOS').style.display = 'block';
   }
 };
@@ -604,15 +425,8 @@ window.calcOSTotal = function() {
 
 window.verificarStatusOS = function() {
   const s = $v('osStatus');
-  const osId = $v('osId');
-  // Seção de pagamento: aparece ao marcar Pronto/Entregue
   if($('areaPgtoOS')) $('areaPgtoOS').style.display = (s === 'Pronto' || s === 'Entregue' || s === 'pronto' || s === 'entregue') ? 'block' : 'none';
-  if($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = (s === 'Orcamento_Enviado' || s === 'orcamento' || s === 'aprovacao') && osId ? 'flex' : 'none';
-  // Botão de Checkout: aparece para Pronto, admin/gestor, OS existente
-  const podeFaturar = osId && (s === 'Pronto' || s === 'Entregue') && (J.role === 'admin' || J.role === 'gestor' || J.role === 'gerente');
-  if($('btnCheckoutOS')) $('btnCheckoutOS').style.display = podeFaturar ? 'flex' : 'none';
-  // Botão excluir: apenas edit + admin/gestor
-  if($('btnDeletarOS')) $('btnDeletarOS').style.display = (osId && (J.role === 'admin' || J.role === 'gestor' || J.role === 'gerente')) ? 'inline-flex' : 'none';
+  if($('btnEnviarWppOS')) $('btnEnviarWppOS').style.display = (s === 'Orcamento_Enviado' || s === 'orcamento' || s === 'aprovacao') && $v('osId') ? 'flex' : 'none';
 };
 
 window.checkPgtoOS = function() {
@@ -682,19 +496,187 @@ window.salvarOS = async function() {
   if ($v('osMec')) payload.mecId = $v('osMec');
   if ($v('osData')) payload.data = $v('osData');
   if ($v('osKm')) payload.km = $v('osKm');
+  // LOTE C — Persistir próxima revisão (data e/ou KM) para o cliente ver
+  if ($v('osProxRev')) payload.proxRev = $v('osProxRev');
+  if ($v('osProxKm'))  payload.proxKm  = $v('osProxKm');
+  // Checklist tri-state (cada campo vale '', 'ok', 'atencao' ou 'critico')
+  ['chkPainel','chkPressao','chkCarroceria','chkDocumentos'].forEach(f => {
+    const v = $v(f);
+    if (v) payload[f] = v;
+  });
+  if ($v('chkObs')) payload.chkObs = $v('chkObs');
+  if ($v('chkPneuDia')) payload.chkPneuDia = $v('chkPneuDia');
+  if ($v('chkPneuTra')) payload.chkPneuTra = $v('chkPneuTra');
+  if ($v('chkComb')) payload.chkComb = $v('chkComb');
   
   if (itens.length > 0) payload.pecasLegacy = itens;
   if (servicos.length > 0) payload.servicos = servicos;
   if (pecas.length > 0) payload.pecas = pecas;
   payload.maoObra = totalMaoObra;
 
-  const tl = JSON.parse($('osTimelineData')?.value || '[]');
-  tl.push({ dt: new Date().toISOString(), user: J.nome, acao: `${osId ? 'Editou' : 'Abriu'} O.S. — Status: ${$v('osStatus')}` });
-  payload.timeline = tl;
-  
+  // Mapeia media para o payload antes do Deep Diff para podermos comparar
   if ($('osMediaArray')) {
       payload.media = JSON.parse($('osMediaArray').value || '[]');
   }
+
+  // --- INÍCIO: DEEP DIFF E GATILHOS (AUDITORIA E WHATSAPP) ---
+  const funcUser = J.nome || 'Mecânico/Gestor';
+  let tl = [];
+  let dispararAvisoEntrega = false;
+
+  if (osId) {
+      const oldOS = J.os.find(x => x.id === osId) || {};
+      tl = oldOS.timeline ? [...oldOS.timeline] : JSON.parse($('osTimelineData')?.value || '[]');
+      let registouAlgo = false;
+
+      // 1. Mudança de Status e Gatilhos de Notificação
+      if (oldOS.status !== payload.status) {
+          const novoStatusLegivel = STATUS_MAP_LEGACY[payload.status] || payload.status;
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Status alterado para: ${novoStatusLegivel}` });
+          registouAlgo = true;
+          
+          // Verifica se o status mudou para Pronto ou Entregue para disparar o WhatsApp
+          if ((payload.status === 'Pronto' || payload.status === 'Entregue') && 
+              oldOS.status !== 'Pronto' && oldOS.status !== 'Entregue') {
+              dispararAvisoEntrega = true;
+          }
+      }
+
+      // 2. Mudança de Diagnóstico (Texto exato)
+      const oldDiag = (oldOS.diagnostico || '').trim();
+      const novoDiag = (payload.diagnostico || '').trim();
+      if (novoDiag && novoDiag !== oldDiag) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Diagnóstico Técnico preenchido/atualizado: "${novoDiag}"` });
+          registouAlgo = true;
+      }
+
+      // 3. Verificação Individual de Checklist (agora tri-state: ok/atencao/critico)
+      const mapCheck = { 
+          chkPainel: 'Painel/Instrumentos', 
+          chkPressao: 'Pressão dos Pneus', 
+          chkCarroceria: 'Carroceria/Pintura', 
+          chkDocumentos: 'Documentos' 
+      };
+      const mapEstadoLabel = { ok: '✓ OK', atencao: '⚠ ATENÇÃO', critico: '✕ CRÍTICO', '': 'neutro' };
+      ['chkPainel', 'chkPressao', 'chkCarroceria', 'chkDocumentos'].forEach(chk => {
+          // Compatibilidade: antigo era boolean (true/false), novo é string ('ok'/'atencao'/'critico')
+          const oldValRaw = oldOS[chk];
+          const newValRaw = payload[chk];
+          const oldVal = (oldValRaw === true || oldValRaw === 'ok') ? 'ok'
+                       : (oldValRaw === 'atencao' || oldValRaw === 'critico') ? oldValRaw : '';
+          const newVal = newValRaw || '';
+          if (oldVal !== newVal) {
+              const labelDe = mapEstadoLabel[oldVal] || 'neutro';
+              const labelPara = mapEstadoLabel[newVal] || 'neutro';
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Checklist "${mapCheck[chk]}": ${labelDe} → ${labelPara}` });
+              registouAlgo = true;
+          }
+      });
+
+      // 3b. Mudança de mecânico responsável
+      if (oldOS.mecId !== payload.mecId && payload.mecId) {
+          const mecOld = (J.equipe || []).find(m => m.id === oldOS.mecId);
+          const mecNovo = (J.equipe || []).find(m => m.id === payload.mecId);
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Mecânico responsável: ${mecOld?.nome || '—'} → ${mecNovo?.nome || '—'}` });
+          registouAlgo = true;
+      }
+
+      // 3c. Mudança de KM
+      if (oldOS.km && payload.km && String(oldOS.km).trim() !== String(payload.km).trim()) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `KM do veículo: ${oldOS.km} → ${payload.km}` });
+          registouAlgo = true;
+      }
+
+      // 3d. Mudança de cliente vinculado
+      if (oldOS.clienteId && payload.clienteId && oldOS.clienteId !== payload.clienteId) {
+          const cOld = (J.clientes || []).find(c => c.id === oldOS.clienteId);
+          const cNovo = (J.clientes || []).find(c => c.id === payload.clienteId);
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Cliente vinculado: "${cOld?.nome || '—'}" → "${cNovo?.nome || '—'}"` });
+          registouAlgo = true;
+      }
+
+      // 4. Identificação de Peças (Adições, Remoções, Alterações de Qtd/Valor)
+      const oldPecas = oldOS.pecas || [];
+      const newPecas = payload.pecas || [];
+      
+      newPecas.forEach(newP => {
+          const descNovo = (newP.desc || '').toLowerCase().trim();
+          const oldP = oldPecas.find(p => (p.desc || '').toLowerCase().trim() === descNovo);
+          
+          if (!oldP) {
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Adicionou peça: ${newP.desc} (Qtd: ${newP.qtd})` });
+              registouAlgo = true;
+          } else {
+              if (parseFloat(oldP.qtd || 0) !== parseFloat(newP.qtd || 0) || parseFloat(oldP.venda || 0) !== parseFloat(newP.venda || 0)) {
+                  tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Alterou peça ${newP.desc} para Qtd: ${newP.qtd} / Valor: R$ ${(newP.venda||0).toFixed(2).replace('.', ',')}` });
+                  registouAlgo = true;
+              }
+          }
+      });
+      
+      oldPecas.forEach(oldP => {
+           const descOld = (oldP.desc || '').toLowerCase().trim();
+           const newP = newPecas.find(p => (p.desc || '').toLowerCase().trim() === descOld);
+           if (!newP) {
+               tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Removeu peça: ${oldP.desc}` });
+               registouAlgo = true;
+           }
+      });
+
+      // 5. Identificação de Serviços (Adições, Remoções, Alterações de Valor)
+      const oldServicos = oldOS.servicos || [];
+      const newServicos = payload.servicos || [];
+      
+      newServicos.forEach(newS => {
+          const descNovo = (newS.desc || '').toLowerCase().trim();
+          const oldS = oldServicos.find(s => (s.desc || '').toLowerCase().trim() === descNovo);
+          
+          if (!oldS) {
+              tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Adicionou serviço: ${newS.desc}` });
+              registouAlgo = true;
+          } else {
+              if (parseFloat(oldS.valor || 0) !== parseFloat(newS.valor || 0)) {
+                  tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Alterou valor do serviço ${newS.desc} para R$ ${(newS.valor||0).toFixed(2).replace('.', ',')}` });
+                  registouAlgo = true;
+              }
+          }
+      });
+      
+      oldServicos.forEach(oldS => {
+           const descOld = (oldS.desc || '').toLowerCase().trim();
+           const newS = newServicos.find(s => (s.desc || '').toLowerCase().trim() === descOld);
+           if (!newS) {
+               tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Removeu serviço: ${oldS.desc}` });
+               registouAlgo = true;
+           }
+      });
+
+      // 6. Novas Fotos/Evidências
+      const oldMediaLength = (oldOS.media || oldOS.fotos || []).length;
+      const newMediaLength = (payload.media || []).length;
+      if (newMediaLength > oldMediaLength) {
+          const adicionadas = newMediaLength - oldMediaLength;
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Anexou ${adicionadas} nova(s) foto(s)/vídeo(s) de evidência.` });
+          registouAlgo = true;
+      } else if (newMediaLength < oldMediaLength) {
+          const removidas = oldMediaLength - newMediaLength;
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Removeu ${removidas} foto(s)/vídeo(s) de evidência.` });
+          registouAlgo = true;
+      }
+
+      // Fallback genérico caso tenha havido uma edição noutros campos (como KM)
+      if (!registouAlgo) {
+          tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Atualizou os detalhes gerais da Ordem de Serviço.` });
+      }
+      
+  } else {
+      // Criação de Nova O.S.
+      tl = JSON.parse($('osTimelineData')?.value || '[]');
+      tl.push({ dt: new Date().toISOString(), user: funcUser, acao: `Abriu a O.S. (Status inicial: ${STATUS_MAP_LEGACY[payload.status] || payload.status})` });
+  }
+
+  payload.timeline = tl;
+  // --- FIM: DEEP DIFF ---
 
   if (($v('osStatus') === 'Pronto' || $v('osStatus') === 'Entregue' || $v('osStatus') === 'pronto' || $v('osStatus') === 'entregue') && payload.mecId) {
       const mec = J.equipe.find(f => f.id === payload.mecId);
@@ -716,36 +698,161 @@ window.salvarOS = async function() {
         }
       }
       
-      const formasPagas = ['Dinheiro', 'PIX', 'Débito', 'Crédito à Vista'];
-      payload.pgtoForma = $v('osPgtoForma'); 
-      payload.pgtoData = $v('osPgtoData');
-      
-      if(payload.pgtoForma && payload.pgtoData) {
-        const statusFin = formasPagas.includes(payload.pgtoForma) ? 'Pago' : 'Pendente';
-        const parcelas = parseInt($v('osPgtoParcelas') || 1);
+      // ═══════════════════════════════════════════════════════════════════
+      // LÓGICA FINANCEIRA COERENTE (LOTE A - refatoração completa)
+      // ═══════════════════════════════════════════════════════════════════
+      // Conceitos importantes:
+      //  • formaRecebimento (como cliente pagou): Dinheiro, PIX, Débito,
+      //    Crédito (1x / 2x / 3x...), Boleto, Crediário próprio
+      //  • Do ponto de vista do CLIENTE, se pagou no cartão, está QUITADO
+      //  • Do ponto de vista da OFICINA, se foi cartão de crédito Nx, ela
+      //    vai receber N parcelas DA OPERADORA (não do cliente)
+      //  • Se foi Boleto/Crediário próprio, aí sim o CLIENTE deve em N parcelas
+      //
+      // Campos na OS:
+      //   payload.pgtoForma    = Dinheiro / PIX / Débito / Crédito / Boleto / Crediário
+      //   payload.pgtoParcelas = 1, 2, 3, 4, 6, 10, 12...
+      //   payload.pgtoData     = data em que o CLIENTE efetuou o pagamento
+      //   payload.pgtoQuitado  = true se cliente pagou por completo (à vista/cartão)
+      //                         false se vai parcelar no crediário/boleto
+      // ═══════════════════════════════════════════════════════════════════
+      const formasAVistaCliente = ['Dinheiro', 'PIX', 'Débito'];     // cliente paga e pronto
+      const formasCartaoCredito = ['Crédito à Vista', 'Crédito', 'Crédito Parcelado']; // cliente quita, operadora paga a oficina em parcelas
+      const formasCreditoOficina = ['Boleto', 'Crediário', 'Boleto (Pendente)']; // cliente DEVE parcelas à oficina
+
+      payload.pgtoForma    = $v('osPgtoForma');
+      payload.pgtoData     = $v('osPgtoData');
+      payload.pgtoParcelas = parseInt($v('osPgtoParcelas') || 1);
+
+      if (payload.pgtoForma && payload.pgtoData) {
+        const parcelas = payload.pgtoParcelas;
         const valorParc = payload.total / parcelas;
-        
-        for (let i = 0; i < parcelas; i++) {
-          const d = new Date(payload.pgtoData || new Date()); 
-          d.setMonth(d.getMonth() + i);
-          db.collection('financeiro').add({
-            tenantId: J.tid, tipo: 'Entrada', status: statusFin,
-            desc: `O.S. ${payload.placa || J.veiculos.find(v => v.id === payload.veiculoId)?.placa || ''} — ${J.clientes.find(c => c.id === payload.clienteId)?.nome || payload.cliente || ''} ${parcelas > 1 ? `(${i + 1}/${parcelas})` : ''}`,
-            valor: valorParc, pgto: payload.pgtoForma, venc: d.toISOString().split('T')[0],
+        const placaRef  = payload.placa || J.veiculos.find(v => v.id === payload.veiculoId)?.placa || '';
+        const cliRef    = J.clientes.find(c => c.id === payload.clienteId)?.nome || payload.cliente || '';
+
+        const pgtoBase = payload.pgtoForma.trim();
+
+        // Apaga recebimentos anteriores desta OS (evita duplicação ao editar)
+        if (osId) {
+          try {
+            const snap = await db.collection('financeiro').where('osId', '==', osId).get();
+            for (const docSnap of snap.docs) {
+              await db.collection('financeiro').doc(docSnap.id).delete();
+            }
+          } catch(e) { console.warn('Limpeza financeiro OS:', e); }
+        }
+
+        // Decide o tipo de fluxo financeiro pela forma de pagamento
+        if (formasAVistaCliente.some(f => pgtoBase.toLowerCase().includes(f.toLowerCase()))) {
+          // ═══ CLIENTE PAGOU À VISTA (Dinheiro/PIX/Débito) ═══
+          // 1 recebimento liquidado, quitado na data informada
+          payload.pgtoQuitado = true;
+          payload.pgtoResumoCliente = `${pgtoBase} à vista`;
+          await db.collection('financeiro').add({
+            tenantId:  J.tid,
+            tipo:      'Entrada',
+            status:    'Pago',
+            desc:      `O.S. ${placaRef} — ${cliRef}`,
+            valor:     payload.total,
+            pgto:      pgtoBase,
+            venc:      payload.pgtoData,
+            dataPgto:  payload.pgtoData,
+            osId:      osId || null,
+            clienteId: payload.clienteId || null,
+            quitadoPeloCliente: true,
+            origem: 'recebimento_os_avista',
+            createdAt: new Date().toISOString()
+          });
+
+        } else if (formasCartaoCredito.some(f => pgtoBase.toLowerCase().includes(f.toLowerCase()))) {
+          // ═══ CLIENTE QUITOU NO CARTÃO DE CRÉDITO (1x, 2x, Nx) ═══
+          // Para o cliente: ESTÁ QUITADO. Não deve nada.
+          // Para a oficina: vai receber da OPERADORA em N parcelas (D+30, D+60...)
+          payload.pgtoQuitado = true;
+          payload.pgtoResumoCliente = parcelas > 1
+            ? `Cartão de Crédito em ${parcelas}x`
+            : `Cartão de Crédito à vista`;
+
+          for (let i = 0; i < parcelas; i++) {
+            const dVenc = new Date(payload.pgtoData);
+            dVenc.setDate(dVenc.getDate() + 30 * (i + 1));  // D+30, D+60, D+90...
+            await db.collection('financeiro').add({
+              tenantId:   J.tid,
+              tipo:       'Entrada',
+              status:     'A Receber',
+              desc:       `Recebimento operadora — O.S. ${placaRef} — ${cliRef} ${parcelas > 1 ? `(${i + 1}/${parcelas})` : ''}`,
+              valor:      valorParc,
+              pgto:       pgtoBase,
+              venc:       dVenc.toISOString().split('T')[0],
+              osId:       osId || null,
+              clienteId:  payload.clienteId || null,
+              quitadoPeloCliente: true,  // IMPORTANTE: cliente já quitou
+              aReceberDe: 'Operadora de Cartão',
+              origem: 'recebimento_os_cartao',
+              createdAt: new Date().toISOString()
+            });
+          }
+
+        } else if (formasCreditoOficina.some(f => pgtoBase.toLowerCase().includes(f.toLowerCase()))) {
+          // ═══ BOLETO / CREDIÁRIO PRÓPRIO (cliente DEVE à oficina) ═══
+          // Aqui sim criamos N títulos "a receber do cliente"
+          payload.pgtoQuitado = false;
+          payload.pgtoResumoCliente = parcelas > 1
+            ? `${pgtoBase} em ${parcelas}x (pendente)`
+            : `${pgtoBase} (pendente)`;
+
+          for (let i = 0; i < parcelas; i++) {
+            const dVenc = new Date(payload.pgtoData);
+            dVenc.setMonth(dVenc.getMonth() + i);
+            await db.collection('financeiro').add({
+              tenantId:   J.tid,
+              tipo:       'Entrada',
+              status:     'Pendente',
+              desc:       `O.S. ${placaRef} — ${cliRef} ${parcelas > 1 ? `(${i + 1}/${parcelas})` : ''}`,
+              valor:      valorParc,
+              pgto:       pgtoBase,
+              venc:       dVenc.toISOString().split('T')[0],
+              osId:       osId || null,
+              clienteId:  payload.clienteId || null,
+              quitadoPeloCliente: false,  // cliente ainda deve
+              aReceberDe: 'Cliente',
+              origem: 'recebimento_os_credito_oficina',
+              createdAt: new Date().toISOString()
+            });
+          }
+
+        } else {
+          // ═══ OUTRAS FORMAS / INDEFINIDO ═══
+          // Cria um único título pendente para análise manual
+          payload.pgtoQuitado = false;
+          payload.pgtoResumoCliente = `${pgtoBase} — verificar`;
+          await db.collection('financeiro').add({
+            tenantId:  J.tid,
+            tipo:      'Entrada',
+            status:    'Pendente',
+            desc:      `O.S. ${placaRef} — ${cliRef}`,
+            valor:     payload.total,
+            pgto:      pgtoBase,
+            venc:      payload.pgtoData,
+            osId:      osId || null,
+            clienteId: payload.clienteId || null,
+            quitadoPeloCliente: false,
+            origem: 'recebimento_os_outros',
             createdAt: new Date().toISOString()
           });
         }
-        
+
+        // Baixa de estoque (independente da forma de pagamento)
         for (const p of pecas) {
           if (p.estoqueId) {
             const item = J.estoque.find(x => x.id === p.estoqueId);
-            if (item) db.collection('estoqueItems').doc(p.estoqueId).update({ qtd: Math.max(0, (item.qtd || 0) - p.qtd) });
+            if (item) await db.collection('estoqueItems').doc(p.estoqueId).update({ qtd: Math.max(0, (item.qtd || 0) - p.qtd) });
           }
         }
       }
   }
 
-  if (osId) {
+if (osId) {
     await db.collection('ordens_servico').doc(osId).update(payload);
     window.toast('✓ O.S. ATUALIZADA');
     audit('OS', `Editou OS ${osId.slice(-6)}`);
@@ -758,6 +865,23 @@ window.salvarOS = async function() {
   }
 
   if(typeof window.fecharModal === 'function') window.fecharModal('modalOS');
+
+  // Disparo automático de WhatsApp quando concluído
+  if (dispararAvisoEntrega && payload.clienteId) {
+      setTimeout(() => {
+          if (confirm('A O.S. foi marcada como PRONTA/ENTREGUE. Deseja avisar o cliente via WhatsApp agora?')) {
+              const cli = J.clientes.find(c => c.id === payload.clienteId);
+              if (cli && cli.wpp) {
+                  const fone = cli.wpp.replace(/\D/g, '');
+                  const vLabel = payload.placa || J.veiculos.find(v => v.id === payload.veiculoId)?.placa || 'seu veículo';
+                  const msg = `Olá ${cli.nome.split(' ')[0]}! 👋\n\nPassando para avisar que o serviço no *${vLabel}* já foi concluído e está *${STATUS_MAP_LEGACY[payload.status]}* na oficina ${J.tnome}.\n\nAgradecemos a confiança!`;
+                  window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
+              } else {
+                  window.toast('⚠ Cliente não possui WhatsApp cadastrado.', 'warn');
+              }
+          }
+      }, 500);
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════

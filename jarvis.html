@@ -2,13 +2,26 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>J.A.R.V.I.S — Painel de Controle</title>
+<!-- ═══ PWA ═══ -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00D4FF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JARVIS Gestor">
+<meta name="mobile-web-app-capable" content="yes">
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('service-worker.js').catch(function(){});
+  });
+}
+</script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="js/config.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Exo+2:wght@300;400;600;700;900&display=swap" rel="stylesheet">
 <style>
@@ -268,13 +281,15 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   .k-col{min-width:100%; width:100%; max-height: none; margin-bottom:14px;}
   .k-col-body{max-height: 400px;}
 
-  /* ─── CHAT MOBILE — LISTA "OU" CONVERSA (estilo WhatsApp Web) ─── */
+ /* ─── CHAT MOBILE — LISTA "OU" CONVERSA (estilo WhatsApp Web) ─── */
   /* Por padrão, o chat mostra a LISTA.
      Quando o JS adiciona .chat-open no container, mostra a CONVERSA. */
   .chat-layout{
     grid-template-columns:1fr !important;
-    height: calc(100vh - 120px);
+    height: calc(100dvh - 140px); /* dvh impede o teclado de engolir o chat */
     position:relative;
+    display: flex;
+    flex-direction: column;
   }
   .chat-list{max-height:none;height:100%;}
   .chat-main{display:none;}
@@ -348,6 +363,14 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   .chat-foot { flex-wrap: nowrap; }
   .chat-foot .j-input { min-width: 0; }
 }
+/* CHECKLIST TRI-STATE — botões coloridos substituem checkbox antigo */
+.chk-tri-wrapper{background:var(--surf2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;}
+.chk-tri-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;}
+.chk-tri-btn{background:var(--surf3,rgba(255,255,255,0.03));border:1px solid var(--border);border-radius:4px;padding:7px 4px;color:var(--muted);font-family:var(--fm);font-size:0.65rem;font-weight:700;letter-spacing:0.5px;cursor:pointer;transition:all 0.15s;text-align:center;}
+.chk-tri-btn:hover{background:var(--surf2);color:var(--text);}
+.chk-tri-btn.sel-ok{background:rgba(0,255,136,0.18);border-color:var(--success);color:var(--success);box-shadow:inset 0 0 0 1px var(--success);}
+.chk-tri-btn.sel-atencao{background:rgba(255,184,0,0.18);border-color:var(--warn);color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn);}
+.chk-tri-btn.sel-critico{background:rgba(255,59,59,0.18);border-color:var(--danger);color:var(--danger);box-shadow:inset 0 0 0 1px var(--danger);}
 </style>
 </head>
 <body>
@@ -696,81 +719,21 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </section>
 
     <section class="section" id="s-ia">
-      <!-- PAINEL IA PRINCIPAL: JARVIS CONSULTOR -->
-      <div class="j-card" style="margin-bottom:16px;">
-        <div class="j-card-header">
-          <div class="j-card-title" style="color:var(--warn)">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M6 12.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5ZM3 8.062C3 6.76 4.235 5.765 5.53 5.886a26.58 26.58 0 0 0 4.94 0C11.765 5.765 13 6.76 13 8.062v1.157a.933.933 0 0 1-.765.935c-.845.147-2.34.346-4.235.346-1.895 0-3.39-.2-4.235-.346A.933.933 0 0 1 3 9.219V8.062Z"/></svg>
-            thIAguinho — DIAGNÓSTICO INTELIGENTE
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn-warn" onclick="window.iaAnalisarDRE()">📊 DRE</button>
-            <button class="btn-warn" onclick="window.iaAnalisarEstoque()">📦 ESTOQUE</button>
-            <button class="btn-warn" onclick="window.iaRadarRevisoes()">📡 RADAR REVISÕES</button>
-          </div>
-        </div>
-        <!-- Chips rápidos -->
-        <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;background:rgba(0,0,0,0.1);">
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">💰 Faturamento do mês</span>
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">📋 Títulos vencidos</span>
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">🔄 Veículos com reincidência</span>
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">👷 Performance da equipe</span>
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">⏳ Orçamentos aguardando aprovação</span>
-          <span onclick="document.getElementById('iaInput').value=this.innerText.replace(/^[^\s]+\s/,'');window.iaPerguntar()" style="padding:5px 12px;background:rgba(255,184,0,0.08);border:1px solid rgba(255,184,0,0.2);border-radius:20px;font-family:var(--fm);font-size:0.68rem;color:var(--warn);cursor:pointer;white-space:nowrap;">📊 Ticket médio 30 dias</span>
-        </div>
-        <div class="ia-box" style="height:55vh;">
-          <div class="ia-messages" id="iaMsgs">
-            <div class="ia-msg bot"><strong>thIAguinho:</strong> Sistema operacional — Padrão JARVIS. Acesso completo: 24 meses de O.S., estoque, finanças, equipe e base de manuais (RAG). O que deseja analisar?</div>
-          </div>
-          <div class="ia-input-area">
-            <input class="j-input" id="iaInput" placeholder="Ex: A placa ABC-1234 trocou amortecedor? Ainda está na garantia?" style="flex:1;">
-            <button class="btn-primary" onclick="window.iaPerguntar()">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-              PROCESSAR
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- RADAR DE REVISÕES (REMARKETING) -->
-      <div class="j-card" style="margin-bottom:16px;">
-        <div class="j-card-header">
-          <div class="j-card-title" style="color:var(--cyan)">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M8 14.933a.5.5 0 0 0 .5-.5v-6.85l2.354 2.354a.5.5 0 1 0 .707-.708l-3.18-3.178a.5.5 0 0 0-.707 0L4.496 9.23a.5.5 0 0 0 .707.707L7.5 7.582v6.851a.5.5 0 0 0 .5.5zm-4.5-11.5a.5.5 0 0 0 0 1h9a.5.5 0 0 0 0-1h-9z"/></svg>
-            Radar de Clientes (Remarketing IA)
-          </div>
-          <button class="btn-outline" onclick="window.iaRadarRevisoes()">📡 RODAR RADAR</button>
-        </div>
-        <div class="j-card-body">
-          <div style="font-family:var(--fm);font-size:0.72rem;color:var(--muted);margin-bottom:12px;">A IA analisa o histórico e identifica clientes que não retornam há mais de 60 dias, gerando mensagens de reativação personalizadas para cada um.</div>
-          <div id="jarvisRadarResultado" style="font-size:0.85rem;line-height:1.7;color:var(--text);"></div>
-        </div>
-      </div>
-
-      <!-- BASE DE CONHECIMENTO RAG (MANUAIS) -->
       <div class="j-card">
         <div class="j-card-header">
-          <div class="j-card-title" style="color:var(--warn)">
-            <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M1 2.828c.885-.37 2.154-.769 3.388-.893 1.33-.134 2.458.063 3.112.752v9.746c-.935-.53-2.12-.603-3.213-.493-1.18.12-2.37.461-3.287.811V2.828zm7.5-.141c.654-.689 1.782-.886 3.112-.752 1.234.124 2.503.523 3.388.893v9.923c-.918-.35-2.107-.692-3.287-.81-1.094-.111-2.278-.039-3.213.492V2.687zM8 1.783C7.015.936 5.587.81 4.287.94c-1.514.153-3.042.672-3.994 1.105A.5.5 0 0 0 0 2.5v11a.5.5 0 0 0 .707.455c.882-.4 2.303-.881 3.68-1.02 1.409-.142 2.59.087 3.223.877a.5.5 0 0 0 .78 0c.633-.79 1.814-1.019 3.222-.877 1.378.139 2.8.62 3.681 1.02A.5.5 0 0 0 16 13.5v-11a.5.5 0 0 0-.293-.455c-.952-.433-2.48-.952-3.994-1.105C10.413.809 8.985.936 8 1.783z"/></svg>
-            Base de Conhecimento RAG — Manuais Técnicos
+          <div class="j-card-title" style="color:var(--warn)">thIAguinho — DIAGNÓSTICO INTELIGENTE</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-warn" onclick="iaAnalisarDRE()">📊 ANALISAR DRE</button>
+            <button class="btn-warn" onclick="iaAnalisarEstoque()">📦 ANALISAR ESTOQUE</button>
           </div>
         </div>
-        <div class="j-card-body">
-          <div style="font-family:var(--fm);font-size:0.72rem;color:var(--muted);margin-bottom:16px;">Injete manuais, torques e procedimentos técnicos na memória da IA. Ela citará a fonte ao responder sobre especificações.</div>
-          <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
-            <label style="flex:1;min-width:200px;padding:14px;background:var(--surf2);border:1px dashed var(--border2);border-radius:4px;text-align:center;cursor:pointer;font-size:0.8rem;color:var(--cyan);">
-              <input type="file" id="iaFileUpload" accept=".txt,.pdf" style="display:none" onchange="window.processarArquivoParaIA(event)">
-              📄 Injetar PDF ou TXT na Memória
-            </label>
-            <small id="iaFileStatus" style="font-size:0.72rem;color:var(--success);font-family:var(--fm);"></small>
+        <div class="ia-box">
+          <div class="ia-messages" id="iaMsgs">
+            <div class="ia-msg bot"><strong>thIAguinho:</strong> Sistema operacional. Tenho acesso à base de dados da oficina. Posso analisar histórico de O.S., estoque crítico, fluxo de caixa e sugerir diagnósticos. O que deseja?</div>
           </div>
-          <textarea class="j-textarea" id="iaConhecimentoTexto" rows="4" placeholder="Ou cole regras, torques e especificações diretamente aqui..."></textarea>
-          <div style="display:flex;gap:10px;margin-top:10px;">
-            <button class="btn-primary" onclick="window.salvarConhecimentoIA()" style="flex:1;">🧠 GRAVAR NA MENTE DA IA</button>
-          </div>
-          <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
-            <div style="font-family:var(--fm);font-size:0.6rem;color:var(--muted);letter-spacing:2px;margin-bottom:10px;">DOCUMENTOS MEMORIZADOS</div>
-            <div id="listaConhecimentosIA"></div>
+          <div class="ia-input-area">
+            <input class="j-input" id="iaInput" placeholder="Ex: A placa ABC-1234 trocou óleo há menos de 3000km?" style="flex:1;">
+            <button class="btn-primary" onclick="iaPerguntar()">PROCESSAR</button>
           </div>
         </div>
       </div>
@@ -796,7 +759,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
       <span class="pill pill-cyan" id="osIdBadge" style="font-size:0.7rem;letter-spacing:2px;">NOVA</span>
-      <div id="osBoxInfo" style="display:none;background:rgba(255,140,0,0.1);border:1px solid rgba(255,140,0,0.3);border-radius:4px;padding:4px 10px;"></div>
       <button class="modal-close" onclick="fecharModal('modalOS')">✕</button>
     </div>
   </div>
@@ -954,19 +916,45 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <select class="j-select" id="chkComb"><option>N/A</option><option>Reserva</option><option>1/4</option><option>Meio</option><option>3/4</option><option>Cheio</option></select>
         </div>
       </div>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;">
-          <input type="checkbox" id="chkPainel" style="accent-color:var(--cyan);"> Painel / Instrumentos OK
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;">
-          <input type="checkbox" id="chkPressao" style="accent-color:var(--cyan);"> Pressão Pneus OK
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;">
-          <input type="checkbox" id="chkCarroceria" style="accent-color:var(--cyan);"> Carroceria/Carenagem OK
-        </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;">
-          <input type="checkbox" id="chkDocumentos" style="accent-color:var(--cyan);"> Documentos OK
-        </label>
+      <!-- Botões tri-state substituindo checkboxes antigos. Estados: neutro / OK (verde) / atenção (amarelo) / crítico (vermelho).
+           Valor guardado em dataset e campo hidden (chkPainel, chkPressao, chkCarroceria, chkDocumentos). -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:10px;margin-bottom:14px;">
+        <div class="chk-tri-wrapper" data-target="chkPainel">
+          <div style="font-family:var(--fm);font-size:0.68rem;color:var(--muted);letter-spacing:1px;margin-bottom:5px;">🎛 PAINEL / INSTRUMENTOS</div>
+          <div class="chk-tri-btns">
+            <button type="button" class="chk-tri-btn" data-value="ok"        onclick="window._chkTriSet(this)">✓ OK</button>
+            <button type="button" class="chk-tri-btn" data-value="atencao"   onclick="window._chkTriSet(this)">⚠ ATENÇÃO</button>
+            <button type="button" class="chk-tri-btn" data-value="critico"   onclick="window._chkTriSet(this)">✕ CRÍTICO</button>
+          </div>
+          <input type="hidden" id="chkPainel" value="">
+        </div>
+        <div class="chk-tri-wrapper" data-target="chkPressao">
+          <div style="font-family:var(--fm);font-size:0.68rem;color:var(--muted);letter-spacing:1px;margin-bottom:5px;">🛞 PRESSÃO DOS PNEUS</div>
+          <div class="chk-tri-btns">
+            <button type="button" class="chk-tri-btn" data-value="ok"        onclick="window._chkTriSet(this)">✓ OK</button>
+            <button type="button" class="chk-tri-btn" data-value="atencao"   onclick="window._chkTriSet(this)">⚠ ATENÇÃO</button>
+            <button type="button" class="chk-tri-btn" data-value="critico"   onclick="window._chkTriSet(this)">✕ CRÍTICO</button>
+          </div>
+          <input type="hidden" id="chkPressao" value="">
+        </div>
+        <div class="chk-tri-wrapper" data-target="chkCarroceria">
+          <div style="font-family:var(--fm);font-size:0.68rem;color:var(--muted);letter-spacing:1px;margin-bottom:5px;">🚗 CARROCERIA / CARENAGEM</div>
+          <div class="chk-tri-btns">
+            <button type="button" class="chk-tri-btn" data-value="ok"        onclick="window._chkTriSet(this)">✓ OK</button>
+            <button type="button" class="chk-tri-btn" data-value="atencao"   onclick="window._chkTriSet(this)">⚠ ATENÇÃO</button>
+            <button type="button" class="chk-tri-btn" data-value="critico"   onclick="window._chkTriSet(this)">✕ CRÍTICO</button>
+          </div>
+          <input type="hidden" id="chkCarroceria" value="">
+        </div>
+        <div class="chk-tri-wrapper" data-target="chkDocumentos">
+          <div style="font-family:var(--fm);font-size:0.68rem;color:var(--muted);letter-spacing:1px;margin-bottom:5px;">📄 DOCUMENTOS</div>
+          <div class="chk-tri-btns">
+            <button type="button" class="chk-tri-btn" data-value="ok"        onclick="window._chkTriSet(this)">✓ OK</button>
+            <button type="button" class="chk-tri-btn" data-value="atencao"   onclick="window._chkTriSet(this)">⚠ ATENÇÃO</button>
+            <button type="button" class="chk-tri-btn" data-value="critico"   onclick="window._chkTriSet(this)">✕ CRÍTICO</button>
+          </div>
+          <input type="hidden" id="chkDocumentos" value="">
+        </div>
       </div>
       <div class="form-group"><label class="j-label">Avarias Prévias / Observações de Entrega</label><textarea class="j-textarea" id="chkObs" rows="3" placeholder="Arranhões, amassados, acessórios ausentes..."></textarea></div>
     </div>
@@ -976,16 +964,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     <div class="timeline" id="osTimeline"></div>
   </div>
 
-  <div class="modal-foot" style="justify-content:space-between;">
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn-ghost" id="btnGerarPDFOS" style="display:none;" onclick="window.gerarPDFOS()">📄 LAUDO PDF</button>
-      <button class="btn-danger" id="btnDeletarOS" style="display:none;" onclick="window.deletarOS()">🗑 EXCLUIR</button>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <button class="btn-ghost" onclick="fecharModal('modalOS')">CANCELAR</button>
-      <button class="btn-primary" id="btnSalvarOS" onclick="window.salvarOS()">REGISTRAR O.S.</button>
-      <button class="btn-success" id="btnCheckoutOS" style="display:none;" onclick="window.abrirFaturamento()">💰 CHECKOUT</button>
-    </div>
+  <div class="modal-foot">
+    <button class="btn-ghost" id="btnGerarPDFOS" style="display:none;" onclick="window.gerarPDFOS()">📄 EXPORTAR LAUDO PDF</button>
+    <button class="btn-ghost" onclick="fecharModal('modalOS')">CANCELAR</button>
+    <button class="btn-primary" id="btnSalvarOS" onclick="window.salvarOS()">REGISTRAR O.S.</button>
   </div>
   <input type="hidden" id="osId">
   <input type="hidden" id="osTimelineData" value="[]">
@@ -1314,7 +1296,10 @@ document.addEventListener('keydown', function(ev){
 // ============================================================
 // BOOTSTRAP DO SISTEMA E IA
 // ============================================================
-const J = {}; 
+// window.J — estado global. Exposto em window para js/ia.js e outros
+// scripts externos conseguirem acessar (busca contextual, grounding, etc.)
+window.J = window.J || {};
+const J = window.J;
 const $ = id => document.getElementById(id);
 const $v = id => $(id) ? $(id).value.trim() : '';
 
@@ -1352,8 +1337,30 @@ document.addEventListener('DOMContentLoaded', () => {
   window.escutarEstoque(); window.escutarFinanceiro(); window.escutarEquipe();
   window.escutarFornecedores(); window.escutarMensagens(); window.escutarAgendamentos();
   window.escutarAuditoria(); window.escutarChatEquipe();
-});
 
+  // ── BLINDAGEM DE MÓDULOS (SUPERADMIN SaaS) ──
+  db.collection('oficinas').doc(J.tid).onSnapshot(doc => {
+    if (doc.exists) {
+      const ofi = doc.data();
+      const mods = ofi.modulos || {};
+      
+      const toggleMenu = (key, hasAccess) => {
+        const btn = document.querySelector(`[onclick="ir('${key}',this)"]`);
+        if (btn) btn.style.display = hasAccess ? 'flex' : 'none';
+      };
+
+      toggleMenu('kanban', mods.os !== false);
+      toggleMenu('clientes', mods.crm !== false);
+      toggleMenu('estoque', mods.estoque !== false);
+      toggleMenu('financeiro', mods.financeiro !== false);
+      toggleMenu('agenda', mods.agenda !== false);
+      toggleMenu('equipe', mods.rh !== false);
+      toggleMenu('chat', mods.chat !== false);
+      toggleMenu('chatequipe', mods.chat !== false); // Trava o chat da equipe junto
+      toggleMenu('ia', mods.ia !== false);
+    }
+  });
+});
 const sectionMap = { dashboard:'s-dashboard', agenda:'s-agenda', kanban:'s-kanban', clientes:'s-clientes', estoque:'s-estoque', financeiro:'s-financeiro', equipe:'s-equipe', chat:'s-chat', chatequipe:'s-chatequipe', ia:'s-ia', auditoria:'s-auditoria' };
 const titleMap = { dashboard:'DASHBOARD', agenda:'AGENDA', kanban:'PÁTIO / O.S.', clientes:'CLIENTES & VEÍCULOS', estoque:'ESTOQUE / NF', financeiro:'FINANCEIRO / DRE', equipe:'EQUIPE & RH', chat:'CRM CHAT', chatequipe:'CHAT EQUIPE', ia:'thIAguinho IA', auditoria:'AUDITORIA' };
 
@@ -1368,6 +1375,40 @@ function ir(key, el) {
 function sair() { sessionStorage.clear(); window.location.href='index.html'; }
 function abrirModal(id) { $(id).classList.add('open'); }
 function fecharModal(id) { $(id).classList.remove('open'); }
+
+// ═══════════════════════════════════════════════════════════════
+// CHECKLIST TRI-STATE — ok / atenção / crítico (3 cores)
+// ═══════════════════════════════════════════════════════════════
+window._chkTriSet = function(btn){
+  const wrap = btn.closest('.chk-tri-wrapper');
+  if(!wrap) return;
+  const allBtns = wrap.querySelectorAll('.chk-tri-btn');
+  const hidden = document.getElementById(wrap.dataset.target);
+  const val = btn.dataset.value;
+  const jaAtivo = btn.classList.contains('sel-ok') || btn.classList.contains('sel-atencao') || btn.classList.contains('sel-critico');
+  allBtns.forEach(b => b.classList.remove('sel-ok','sel-atencao','sel-critico'));
+  if(jaAtivo){
+    // segundo clique no mesmo → limpa
+    if(hidden) hidden.value = '';
+  } else {
+    btn.classList.add('sel-' + val);
+    if(hidden) hidden.value = val;
+  }
+};
+
+// Aplica estado tri-state a partir de valor salvo (usado ao editar OS)
+window._chkTriApply = function(inputId, valor){
+  const hidden = document.getElementById(inputId);
+  if(!hidden) return;
+  hidden.value = valor || '';
+  const wrap = hidden.closest('.chk-tri-wrapper');
+  if(!wrap) return;
+  wrap.querySelectorAll('.chk-tri-btn').forEach(b=>b.classList.remove('sel-ok','sel-atencao','sel-critico'));
+  if(valor){
+    const btn = wrap.querySelector(`.chk-tri-btn[data-value="${valor}"]`);
+    if(btn) btn.classList.add('sel-'+valor);
+  }
+};
 
 function switchTab(el, active, ...others) {
   el.parentElement.querySelectorAll('.mtab').forEach(t => t.classList.remove('active'));
@@ -1698,6 +1739,127 @@ window._wppAcessoCliente = function(cid) {
     `Pelo portal você acompanha suas O.S. e conversa com a equipe.`;
   window.open(`https://wa.me/55${fone}?text=${encodeURIComponent(msg)}`, '_blank');
 };
+// ═══════════════════════════════════════════════════════════════════════
+// EXCLUSÃO DEFINITIVA — dupla confirmação + auditoria obrigatória
+// Usado em clientes, veículos, O.S., financeiro, peças, NF, fornecedores, equipe
+// ═══════════════════════════════════════════════════════════════════════
+window._excluirDef = async function(opts) {
+  const { collection, id, label, modulo, extra, depois } = opts;
+  if (!collection || !id) return false;
+
+  // Bloqueia se usuário não é admin
+  const role = (sessionStorage.getItem('j_role') || '').toLowerCase();
+  if (role !== 'admin' && role !== 'gestor' && role !== 'superadmin') {
+    window.toast('⚠ Apenas gestor/admin pode excluir registros definitivamente.', 'warn');
+    return false;
+  }
+
+  // 1ª confirmação (texto)
+  const nomeLabel = label || `registro ${id.slice(-6)}`;
+  if (!confirm(`⚠ EXCLUSÃO DEFINITIVA\n\nVocê está prestes a APAGAR PARA SEMPRE: ${nomeLabel}\n\n${extra || ''}\n\nEsta ação NÃO PODE ser desfeita. Continuar?`)) return false;
+
+  // 2ª confirmação (digitação de "EXCLUIR")
+  const txt = prompt(`⚠ Para confirmar a exclusão definitiva de "${nomeLabel}", digite EXCLUIR (maiúsculas) e clique OK:`);
+  if (txt !== 'EXCLUIR') {
+    window.toast('Exclusão cancelada (texto de confirmação incorreto).', 'warn');
+    return false;
+  }
+
+  try {
+    // 3) Auditoria SEMPRE antes de apagar (para manter registro)
+    await db.collection('lixeira_auditoria').add({
+      tenantId: J.tid,
+      modulo: modulo || collection.toUpperCase(),
+      acao: `EXCLUSÃO DEFINITIVA — ${nomeLabel}${extra ? ' | ' + extra : ''}`,
+      usuario: J.nome || 'Admin',
+      role: role,
+      ts: new Date().toISOString(),
+      colRef: collection,
+      docIdRef: id
+    });
+
+    // 4) Apaga do Firestore
+    await db.collection(collection).doc(id).delete();
+
+    window.toast(`✓ ${nomeLabel} removido(a) permanentemente.`, 'ok');
+    if (typeof depois === 'function') depois();
+    return true;
+  } catch (e) {
+    console.error('[excluirDef]', e);
+    window.toast('⚠ Erro na exclusão: ' + e.message, 'err');
+    return false;
+  }
+};
+
+// Wrappers específicos — um para cada tabela do sistema
+window.excluirClienteDef = function(id) {
+  const c = J.clientes.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'clientes', id,
+    label: `cliente "${c?.nome || id}"`,
+    modulo: 'CLIENTES',
+    extra: c?.doc ? `Doc: ${c.doc}` : ''
+  });
+};
+window.excluirVeiculoDef = function(id) {
+  const v = J.veiculos.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'veiculos', id,
+    label: `veículo ${v?.placa || id} ${v?.modelo || ''}`.trim(),
+    modulo: 'VEICULOS'
+  });
+};
+window.excluirOSDef = function(id) {
+  const o = J.os.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'ordens_servico', id,
+    label: `O.S. #${id.slice(-6).toUpperCase()}`,
+    modulo: 'ORDEM_SERVICO',
+    extra: `Status: ${o?.status || '—'} | Total: ${moeda(o?.total || 0)}`
+  });
+};
+window.excluirPecaDef = function(id) {
+  const p = J.estoque.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'estoqueItems', id,
+    label: `peça "${p?.desc || id}" (cód ${p?.codigo || '—'})`,
+    modulo: 'ESTOQUE'
+  });
+};
+window.excluirFinanceiroDef = function(id) {
+  const f = J.financeiro?.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'financeiro', id,
+    label: `lançamento "${f?.desc || id}"`,
+    modulo: 'FINANCEIRO',
+    extra: `Valor: ${moeda(f?.valor || 0)} | Tipo: ${f?.tipo || '—'}`
+  });
+};
+window.excluirFornecedorDef = function(id) {
+  const f = J.fornecedores?.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'fornecedores', id,
+    label: `fornecedor "${f?.nome || id}"`,
+    modulo: 'FORNECEDORES'
+  });
+};
+window.excluirFuncionarioDef = function(id) {
+  const f = J.equipe?.find(x => x.id === id);
+  return window._excluirDef({
+    collection: 'funcionarios', id,
+    label: `funcionário "${f?.nome || id}"`,
+    modulo: 'EQUIPE',
+    extra: `Cargo: ${f?.cargo || '—'}`
+  });
+};
+window.excluirNFDef = function(id) {
+  return window._excluirDef({
+    collection: 'notas_entrada', id,
+    label: `NF #${id.slice(-6).toUpperCase()}`,
+    modulo: 'NF_ENTRADA'
+  });
+};
+
 window.deletarCliente = async function(id) { if(confirm('Deletar este cliente?')){ await db.collection('clientes').doc(id).delete(); window.toast('✓ REMOVIDO'); audit('CLIENTES','Deletou cliente'); } }
 
 window.buscarCEP = async function(cep) {
@@ -2194,16 +2356,30 @@ window.renderAgenda = function() {
   }).join('');
 }
 window.converterAgendaOS = async function(agdId) {
-  const a=J.agendamentos.find(x=>x.id===agdId); if(!a) return;
-  await db.collection('agendamentos').doc(agdId).update({status:'Convertido',updatedAt:new Date().toISOString()});
+  const a = J.agendamentos.find(x => x.id === agdId); if(!a) return;
+
+  const c = J.clientes.find(x => x.id === a.clienteId);
+  const v = J.veiculos.find(x => x.id === a.veiculoId);
+
+  // 1) Deleta DEFINITIVAMENTE o agendamento (item 12 da lista)
+  await db.collection('agendamentos').doc(agdId).delete();
+  audit('AGENDA', `Agendamento ${agdId.slice(-5)} convertido em O.S. e removido (cliente: ${c?.nome||'—'}, veículo: ${v?.placa||'—'})`);
+
+  // 2) Pré-popula o modal da nova O.S. com os dados do agendamento
   window.prepOS('add');
-  setTimeout(()=>{
-    $('osCliente').value=a.clienteId; window.filtrarVeiculosOS();
-    setTimeout(()=>{ $('osVeiculo').value=a.veiculoId; },100);
-    $('osDescricao').value=a.servico||''; $('osData').value=a.data||new Date().toISOString().split('T')[0];
+  setTimeout(() => {
+    if ($('osCliente')) { $('osCliente').value = a.clienteId; }
+    if (typeof window.filtrarVeiculosOS === 'function') window.filtrarVeiculosOS();
+    setTimeout(() => { if ($('osVeiculo')) $('osVeiculo').value = a.veiculoId; }, 120);
+    if ($('osDescricao')) $('osDescricao').value = a.servico || '';
+    if ($('osData')) $('osData').value = a.data || new Date().toISOString().split('T')[0];
+    if ($('osMec') && a.mecId) $('osMec').value = a.mecId;
+    // Grava referência ao agendamento original para auditoria
+    if ($('osId')) $('osId').dataset.fromAgd = agdId;
     abrirModal('modalOS');
-  },100);
-}
+    toast('✓ Agendamento convertido em O.S. O registro antigo foi apagado.', 'ok');
+  }, 120);
+};
 
 // AUDITORIA
 window.renderAuditoria = function() {
@@ -2212,131 +2388,15 @@ window.renderAuditoria = function() {
 }
 
 // GEMINI IA
-let iaHistorico = [];
-window.iaPerguntar = async function() {
-  const inp=$('iaInput'); const msg=$v('iaInput'); if(!msg) return; inp.value='';
-  window.adicionarMsgIA('user',msg); window.adicionarMsgIA('bot','<span style="color:var(--muted)">⏳ Processando...</span>');
-  const key=J.gemini; if(!key){window.adicionarMsgIA('bot','⚠ Configure a API Key Gemini no Superadmin.');return;}
-  const ctx = `Oficina: ${J.tnome}. Mecânicos: ${J.equipe.map(f=>f.nome).join(', ')}. Veículos: ${J.veiculos.length}. O.S. Pátio: ${J.os.filter(o=>!['Cancelado','Pronto','Entregue'].includes(o.status)).length}. Peças críticas: ${J.estoque.filter(p=>(p.qtd||0)<=(p.min||0)).map(p=>p.desc).join(', ')}.`;
-  const histOS = J.os.slice(-10).map(o=>{const v=J.veiculos.find(x=>x.id===o.veiculoId);return `OS: ${v?.placa}, Sts: ${o.status}, Tot: ${moeda(o.total)}`;}).join('\n');
-  const systemPrompt = `Você é o thIAguinho, IA para gestão de oficinas.\n\nCONTEXTO:\n${ctx}\n\nÚLTIMAS O.S.:\n${histOS}\n\nResponda em português de forma técnica e direta. Não alucine dados.`;
-  iaHistorico.push({role:'user',text:msg});
-  try {
-    const contents=iaHistorico.map(h=>({role:h.role==='user'?'user':'model',parts:[{text:h.text}]}));
-    const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents,systemInstruction:{parts:[{text:systemPrompt}]}})});
-    const data=await res.json(); if(!res.ok) throw new Error(data.error?.message||'Erro API');
-    const resp=data.candidates?.[0]?.content?.parts?.[0]?.text||'Sem resposta';
-    iaHistorico.push({role:'model',text:resp});
-    $('iaMsgs').lastChild?.remove(); window.adicionarMsgIA('bot',resp.replace(/\n/g,'<br>'));
-  } catch(e){ $('iaMsgs').lastChild?.remove(); window.adicionarMsgIA('bot','⚠ Erro: '+e.message); }
-}
-window.iaAnalisarDRE = async function() { $('iaInput').value='Analise o financeiro atual e sugira melhorias.'; ir('ia',document.querySelector('.nav-item:last-child')); await window.iaPerguntar(); }
-window.iaAnalisarEstoque = async function() { $('iaInput').value='Quais peças estão em nível crítico para reposição?'; ir('ia',document.querySelector('.nav-item:last-child')); await window.iaPerguntar(); }
-window.adicionarMsgIA = function(role, html) {
-  if(!$('iaMsgs')) return;
-  const div=document.createElement('div'); div.className='ia-msg '+role;
-  if(role==='bot') div.innerHTML='<strong>thIAguinho:</strong> '+html; else div.innerHTML=html;
-  $('iaMsgs').appendChild(div); $('iaMsgs').scrollTop=$('iaMsgs').scrollHeight;
-}
-document.getElementById('iaInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')window.iaPerguntar();});
+// ═══════════════════════════════════════════════════════════════
+// IA — A implementação real está em js/ia.js (Gemini 2.0 Flash +
+// 24 meses de histórico + Google Search grounding + upload de PDF/imagem).
+// Este bloco foi removido pois sobrescrevia a função avançada.
+// ═══════════════════════════════════════════════════════════════
 </script>
-<!-- ═══ MODAL: VINCULAR BOX E MECÂNICO ═══════════════════════════════ -->
-<div class="overlay" id="modalBox">
-<div class="modal" style="max-width:480px;">
-  <div class="modal-head">
-    <div class="modal-title">📍 VINCULAR BOX E MECÂNICO</div>
-    <button class="modal-close" onclick="fecharModal('modalBox')">✕</button>
-  </div>
-  <div class="modal-body">
-    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:20px;">O orçamento foi aprovado. Defina o box de trabalho e o mecânico responsável pela execução.</p>
-    <div class="form-group">
-      <label class="j-label">Número do Box / Elevador</label>
-      <select class="j-select" id="boxNumero">
-        <option value="">Selecione o box...</option>
-        <option value="Box 1">Box 1 — Elevador Principal</option>
-        <option value="Box 2">Box 2 — Elevador Secundário</option>
-        <option value="Box 3">Box 3 — Alinhamento / Geometria</option>
-        <option value="Box 4">Box 4 — Elétrica / Diagnóstico OBD</option>
-        <option value="Box 5">Box 5 — Funilaria / Pintura</option>
-        <option value="Pátio Interno">Pátio Interno — Sem Elevador</option>
-        <option value="Lavagem">Área de Lavagem / Estética</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="j-label">Mecânico Responsável</label>
-      <select class="j-select" id="boxMecanico"></select>
-    </div>
-  </div>
-  <div class="modal-foot">
-    <button class="btn-ghost" onclick="fecharModal('modalBox')">CANCELAR</button>
-    <button class="btn-primary" onclick="window.confirmarBox()">✓ CONFIRMAR E INICIAR SERVIÇO</button>
-  </div>
-</div>
-</div>
-
-<!-- ═══ MODAL: CHECKOUT / FATURAMENTO ═══════════════════════════════ -->
-<div class="overlay" id="modalFaturamento">
-<div class="modal" style="max-width:460px;">
-  <div class="modal-head">
-    <div class="modal-title">💰 CHECKOUT E FATURAMENTO</div>
-    <button class="modal-close" onclick="fecharModal('modalFaturamento')">✕</button>
-  </div>
-  <div class="modal-body" style="text-align:center;">
-    <input type="hidden" id="fatOsId">
-    <div style="margin-bottom:24px;">
-      <div style="font-family:var(--fm);font-size:0.65rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Valor Total Faturado</div>
-      <div id="fatValorTotal" style="font-family:var(--fd);font-size:3rem;font-weight:700;color:var(--success);">R$ 0,00</div>
-    </div>
-    <div class="form-group" style="text-align:left;">
-      <label class="j-label">Forma de Pagamento</label>
-      <select class="j-select" id="fatForma" onchange="window.checkFatParcelas()">
-        <option value="PIX">PIX / Transferência Bancária</option>
-        <option value="Dinheiro">Dinheiro Espécie</option>
-        <option value="Débito">Cartão Débito</option>
-        <option value="Crédito à Vista">Cartão Crédito — À Vista</option>
-        <option value="Crédito Parcelado">Cartão Crédito — Parcelado</option>
-        <option value="Boleto">Boleto Bancário (Pendente)</option>
-      </select>
-    </div>
-    <div class="form-group" id="fatDivParcelas" style="display:none;text-align:left;">
-      <label class="j-label">Parcelamento</label>
-      <select class="j-select" id="fatParcelas">
-        <option value="2">2x</option><option value="3">3x</option><option value="4">4x</option>
-        <option value="6">6x</option><option value="10">10x</option><option value="12">12x</option>
-      </select>
-    </div>
-    <div style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:4px;padding:12px;font-family:var(--fm);font-size:0.72rem;color:var(--muted);text-align:left;margin-top:8px;">
-      ✓ Estoque será baixado automaticamente<br>
-      ✓ Títulos gerados no financeiro (DRE)<br>
-      ✓ Comissão do mecânico calculada<br>
-      ✓ O.S. arquivada como Entregue
-    </div>
-  </div>
-  <div class="modal-foot">
-    <button class="btn-ghost" onclick="fecharModal('modalFaturamento')">CANCELAR</button>
-    <button class="btn-success" onclick="window.processarFaturamento()" style="font-size:1rem;padding:12px 28px;">🚀 CONFIRMAR CHECKOUT</button>
-  </div>
-</div>
-</div>
-
+<script src="js/fiscal.js"></script>
 <script src="js/financeiro.js"></script>
 <script src="js/os.js"></script>
 <script src="js/ia.js"></script>
-<script>
-// Parcelas do faturamento
-window.checkFatParcelas = function() {
-  const f = document.getElementById('fatForma')?.value || '';
-  const show = f === 'Crédito Parcelado' || f === 'Boleto';
-  const div = document.getElementById('fatDivParcelas');
-  if (div) div.style.display = show ? 'block' : 'none';
-  if (!show) { const el = document.getElementById('fatParcelas'); if(el) el.value = '1'; }
-};
-// Carregar base de conhecimento da IA ao iniciar
-document.addEventListener('DOMContentLoaded', () => {
-  if (typeof window.iaCarregarBaseConhecimento === 'function') {
-    setTimeout(window.iaCarregarBaseConhecimento, 1500);
-  }
-});
-</script>
 </body>
 </html>

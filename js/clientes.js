@@ -55,11 +55,42 @@ window.prepCliente = function(mode, id = null) {
 
 window.salvarCliente = async function() {
   if (!_v('cliNome')) { toastWarn('Nome é obrigatório'); return; }
+
+  // ═══ VALIDAÇÃO FISCAL OFICIAL DO DOCUMENTO (CPF/CNPJ) ═══
+  const docRaw = _v('cliDoc');
+  const docLimpo = String(docRaw || '').replace(/[^\d]/g, '');
+  let docFormatado = docRaw;
+  if (docLimpo) {
+    if (docLimpo.length === 11) {
+      if (typeof window.validarCPF === 'function' && !window.validarCPF(docLimpo)) {
+        toastWarn('CPF inválido. Verifique os dígitos verificadores.');
+        return;
+      }
+      docFormatado = window.formatarCPF ? window.formatarCPF(docLimpo) : docRaw;
+    } else if (docLimpo.length === 14) {
+      if (typeof window.validarCNPJ === 'function' && !window.validarCNPJ(docLimpo)) {
+        toastWarn('CNPJ inválido. Verifique os dígitos verificadores.');
+        return;
+      }
+      docFormatado = window.formatarCNPJ ? window.formatarCNPJ(docLimpo) : docRaw;
+    } else if (docLimpo.length > 0) {
+      toastWarn('Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos.');
+      return;
+    }
+    // Verifica duplicidade na base do tenant
+    const id = _v('cliId');
+    if (typeof window.cpfDuplicado === 'function' && window.cpfDuplicado(docLimpo, J.clientes, id)) {
+      toastWarn('Já existe outro cliente cadastrado com este CPF/CNPJ.');
+      return;
+    }
+  }
+
   const p = {
     tenantId:  J.tid,
     nome:      _v('cliNome'),
     wpp:       _v('cliWpp'),
-    doc:       _v('cliDoc'),
+    doc:       docFormatado,
+    docLimpo:  docLimpo,
     email:     _v('cliEmail'),
     login:     _v('cliLogin'),
     pin:       _v('cliPin'),

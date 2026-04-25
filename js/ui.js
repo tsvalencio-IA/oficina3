@@ -24,18 +24,6 @@ window.toastErr  = msg => toast(msg, 'err');
 window.toastWarn = msg => toast(msg, 'warn');
 window.toastInfo = msg => toast(msg, 'info');
 
-window.setLoading = function(btnId, loading, textoCarregando) {
-  const btn = document.getElementById(btnId);
-  if (!btn) return;
-  btn.disabled = loading;
-  if (loading) {
-    btn._textoOriginal = btn.innerHTML;
-    btn.innerHTML = `<span class="j-spinner"></span> ${textoCarregando || 'Aguarde...'}`;
-  } else {
-    btn.innerHTML = btn._textoOriginal || textoCarregando || 'OK';
-  }
-};
-
 // ============================================================
 // MODAL SYSTEM (Adaptador Universal)
 // ============================================================
